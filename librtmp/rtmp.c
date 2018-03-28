@@ -172,6 +172,8 @@ void
 	RTMP_ctrlC = TRUE;
 }
 
+}
+
 void RTMPPacket_Copy1(RTMPPacket *dst, RTMPPacket *src)
 {
 	dst->m_headerType = src->m_headerType;				
@@ -186,8 +188,8 @@ void RTMPPacket_Copy1(RTMPPacket *dst, RTMPPacket *src)
 	// RTMP HEADER
 	memcpy(dst->m_body-RTMP_MAX_HEADER_SIZE, 
 	src->m_body-RTMP_MAX_HEADER_SIZE, dst->m_nBodySize+RTMP_MAX_HEADER_SIZE);
-	
-#if 0
+
+	#if 0
 	//chunk
 	if(src->m_chunk){
 		dst->m_chunk = malloc(sizeof(RTMPChunk));
@@ -200,9 +202,9 @@ void RTMPPacket_Copy1(RTMPPacket *dst, RTMPPacket *src)
 			memcpy(dst->m_chunk->c_chunk, src->m_chunk->c_chunk, src->m_chunk->c_chunkSize);
 		}
 	}
-		
-#endif
+	#endif
 }
+
 
 void RTMPPacket_Copy(RTMPPacket *dst, RTMPPacket *src)
 {
@@ -253,15 +255,13 @@ void RTMPPacket_Copy(RTMPPacket *dst, RTMPPacket *src)
 	//3. Timestamp(3byte)
 	ts = src->m_nTimeStamp;
 	basets = ts & 0xFFFFFF;
+	
 	*ptr++ = basets >> 16;
 	*ptr++ = (uint8_t)(basets>>8);
 	*ptr++ = (uint8_t)basets;
-
+	
 	//4. TimestampExtended(1byte)
-	//if(ts >= 0xFFFFFF)
-		*ptr++ = (ts >> 24);
-	//else
-		//*ptr++ = 0x00;
+	*ptr++ = (ts >> 24) & 0x7F;
 
 	//5. StreamID(3byte)
 	*ptr++ = 0x00;
@@ -281,7 +281,6 @@ void RTMPPacket_Copy(RTMPPacket *dst, RTMPPacket *src)
 	*ptr++ = (uint8_t) datasize;
 
 	
-
 	//chunk
 	if(src->m_chunk){
 		dst->m_chunk = malloc(sizeof(RTMPChunk));
@@ -1613,8 +1612,7 @@ static int
 			r->m_sb.sb_size -= nRead;
 			nBytes = nRead;
 			r->m_nBytesIn += nRead;
-			if (r->m_bSendCounter
-				&& r->m_nBytesIn > ( r->m_nBytesInSent + r->m_nClientBW / 10))
+			if (r->m_bSendCounter && r->m_nBytesIn > ( r->m_nBytesInSent + r->m_nClientBW / 10))
 				if (!SendBytesReceived(r))
 					return FALSE;
 		}
@@ -3717,6 +3715,7 @@ int
 
 	//RTMP_Log(RTMP_LOGDEBUG2, "%s: fd=%d", __FUNCTION__, r->m_sb.sb_socket);
 
+	//1. Basic Header
 	if (ReadN(r, (char *)hbuf, 1) == 0)
 	{
 		RTMP_Log(RTMP_LOGERROR, "%s, failed to read RTMP packet header", __FUNCTION__);
@@ -3724,6 +3723,7 @@ int
 	}
 
 	packet->m_headerType = (hbuf[0] & 0xc0) >> 6;
+
 	packet->m_nChannel = (hbuf[0] & 0x3f);
 	header++;
 	if (packet->m_nChannel == 0)
@@ -3753,6 +3753,7 @@ int
 		header += 2;
 	}
 
+	//2. Message Header
 	nSize = packetSize[packet->m_headerType];
 
 	if (packet->m_nChannel >= r->m_channelsAllocatedIn)
@@ -3817,6 +3818,7 @@ int
 		}
 	}
 
+	//3. Extended Timestamp（扩展时间戳）
 	extendedTimestamp = packet->m_nTimeStamp == 0xffffff;
 	if (extendedTimestamp)
 	{
@@ -3841,6 +3843,7 @@ int
 		}
 		didAlloc = TRUE;
 		packet->m_headerType = (hbuf[0] & 0xc0) >> 6;
+
 	}
 
 	nToRead = packet->m_nBodySize - packet->m_nBytesRead;
@@ -3864,6 +3867,8 @@ int
 		return FALSE;
 	}
 
+	
+
 	packet->m_nBytesRead += nChunk;
 
 	/* keep the packet as ref for other packets on this channel */
@@ -3877,7 +3882,10 @@ int
 
 	if (RTMPPacket_IsReady(packet))
 	{
-		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)packet->m_body, packet->m_nBodySize);
+		printf("-----------read 1-------------\n");
+		RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)packet->m_body, packet->m_nBodySize);
+		printf("-----------read 2-------------\n\n");
+	
 		/* make packet's timestamp absolute */
 		if (!packet->m_hasAbsTimestamp)
 			packet->m_nTimeStamp += r->m_channelTimestamp[packet->m_nChannel];	/* timestamps seem to be always relative!! */
@@ -3899,6 +3907,8 @@ int
 }
 
 #ifndef CRYPTO
+
+// Client handshake to Server
 static int
 	HandShake(RTMP *r, int FP9HandShake)
 {
@@ -3909,24 +3919,30 @@ static int
 	char clientbuf[RTMP_SIG_SIZE + 1], *clientsig = clientbuf + 1;
 	char serversig[RTMP_SIG_SIZE];
 
+	//C0 
 	clientbuf[0] = 0x03;		/* not encrypted */
 
+	//C1 Time
 	uptime = htonl(RTMP_GetTime());
 	memcpy(clientsig, &uptime, 4);
 
+	//C1 0值
 	memset(&clientsig[4], 0, 4);
 
 #ifdef _DEBUG
 	for (i = 8; i < RTMP_SIG_SIZE; i++)
 		clientsig[i] = 0xff;
 #else
+	//C1 Random
 	for (i = 8; i < RTMP_SIG_SIZE; i++)
 		clientsig[i] = (char)(rand() % 256);
 #endif
 
+	// Send C0C1
 	if (!WriteN(r, clientbuf, RTMP_SIG_SIZE + 1))
 		return FALSE;
 
+	// Read S0
 	if (ReadN(r, &type, 1) != 1)	/* 0x03 or 0x06 */
 		return FALSE;
 
@@ -3936,6 +3952,7 @@ static int
 		RTMP_Log(RTMP_LOGWARNING, "%s: Type mismatch: client sent %d, server answered %d",
 		__FUNCTION__, clientbuf[0], type);
 
+	// Read S1
 	if (ReadN(r, serversig, RTMP_SIG_SIZE) != RTMP_SIG_SIZE)
 		return FALSE;
 
@@ -3949,9 +3966,12 @@ static int
 		serversig[4], serversig[5], serversig[6], serversig[7]);
 
 	/* 2nd part of handshake */
+
+	// Send C2
 	if (!WriteN(r, serversig, RTMP_SIG_SIZE))
 		return FALSE;
 
+	// Read S2
 	if (ReadN(r, serversig, RTMP_SIG_SIZE) != RTMP_SIG_SIZE)
 		return FALSE;
 
@@ -3963,6 +3983,139 @@ static int
 	return TRUE;
 }
 
+/*
+	1、 c0与s0格式
+		c0和s0包是一个1字节,可以看作是一个byte
+
+		|--------------|
+		| Time (4byte) |
+		|--------------|
+
+		1、 简单握手：
+        		作用：C0和S0一致，都是一个字节，都代表当前使用的rtmp协议的版本号。
+        		如果服务器端或者客户端收到的C0/S0字段解析出为非03，对端可以选择以版本3来响应，也可以放弃握手。
+
+        		版本号 : 1字节
+			0x03  0x06
+
+		2、 复杂握手：
+        		作用：说明是明文还是密文。
+
+        		如果使用的是明文（0X03），同时代表当前使用的rtmp协议的版本号。
+
+        		如果是密文，该位为0x06
+			
+		目前rtmp版本定义为3,0-2是早期的专利产品所使用的值,现已经废弃,4-31是预留值,32-255是禁用值(这样做是为了区分基于文本的协议,
+		因为这些协议通常都是以一个可打印的字符开始),如果服务端不能识别客户请求的版本,那么它应该发送3的响应,客户端这时可以选择下降到版本3,也可以放弃这次握手
+
+	2、 c1与s1格式
+		c1与s1长度为1536个字节,它们由以下字段组成
+
+		1、 简单握手：
+
+			|--------------|--------------|-------------------|
+			| Time (4byte) | Zero (4byte) | Random (1528byte) |
+			|--------------|--------------|-------------------|
+			
+			1、 时间戳 : 4字节
+				包含了一个时间戳,它是所有从这个端点发送出去的将来数据块的起始点,
+				它可以是零,或是任意值,为了同步多个数据块流,端点可能会将这个字段设成其它数据块流时间戳的当前值.
+				
+			2、 0 : 4字节	
+				必须是0	这个字段必须都是0。如果不是0，代表要使用complex handshack。
+				
+			3、 随机数 : 1528字节
+				可以是任意值,因为每个端点必须区分已经初始化的握手和对等端点初始化的握手的响应,所以这个数据要足够的随机,
+				当然这个也不需要密码级的随机或是动态值.
+
+		2、 复杂握手：
+			C1S1 Schemal0
+			|--------------|-----------------|-----------------|------------------|
+			| Time (4byte) | Version (4byte) |  Key (764byte)  | Digest (764byte) |
+			|--------------|-----------------|-----------------|------------------|
+
+			C1S1 Schemal1
+			|--------------|-----------------|------------------|-----------------|
+			| Time (4byte) | Version (4byte) | Digest (764byte) |  Key (764byte)  |
+			|--------------|-----------------|------------------|-----------------|
+
+			1、 Time（4字节）：这个字段包含一个timestamp，用于本终端发送的所有后续块的时间起点。
+				这个值可以是0，或者一些任意值。要同步多个块流，终端可以发送其他块流当前的timestamp的值，以此让当前流跟要同步的流保持时间上的同步。
+
+			2、 Version(4个字节)：4bytes 为程序版本。C1一般是0x80000702。S1是0x04050001。貌似这个可以随意填写，但是要采用非0值跟simple handshack区分。
+
+			3、 Key(764个字节)：
+				1) random-data：长度由这个字段的最后4个byte决定，即761-764
+				2) key-data：128个字节。Key字段对应C1和S1有不同的算法，这个需要注意。后面会详细解释。
+					发送端（C1）中的Key应该是随机的，接收端（S1）的key需要按照发送端的key去计算然后返回给发送端。
+				3) random-data：（764-offset-128-4）个字节
+				4) key_offset：4字节, 最后4字节定义了key的offset（相对于KeyBlock开头而言，相当于第一个random_data的长度）
+
+				Key (764byte)
+				|---------------------|---------------|---------------------------------|------------------|
+				| Random (Offset byte)| Key (128byte) | Random (764 - Offset - 128 - 4) |  Offset (4byte)  |
+				|---------------------|---------------|---------------------------------|------------------|
+
+			4、 Digest(764个字节)：
+				1) offset：4字节, 开头4字节定义了digest的offset
+				（相对于DigestBlock的第5字节而言，offset=3表示digestBlock[7~38]为digest，【4-6】即为第一个random_data）
+				2) random-data：长度由这个字段起始的4个byte决定
+				3) digest-data：32个字节。Digest字段对应C1和S1有不同的算法，这个需要注意。后面会详细解释。
+				4) random-data：（764-4-offset-32）个字节
+
+				Digest (764字节)
+				|-----------------|----------------------|------------------|--------------------------------|
+				|  Offset (4byte) | Random (Offset byte) | Digest (32 byte) | Random (764 - 4 - Offset - 32) |
+				|-----------------|----------------------|------------------|--------------------------------|
+
+			5、 算法：
+				1) C1 的 key 为 128bytes 随机数。
+				2) C1_32bytes_digest= HMACsha256(P1+P2, 1504, FPKey, 30) ，
+					其中P1为digest之前的部分，P2为digest之后的部分，P1+P2是将这两部分拷贝到新的数组，共1536-32长度。
+					
+				3) S1的key根据 C1的key算出来。
+				4) S1的digest算法同C1。注意，必须先计算S1的key，因为key变化后digest也重新计算。
+
+	3、 c2与s2格式
+		c2和s2包长都是1536字节, 几乎是 s1 和 c1 的回显.
+
+		1、 简单握手：
+		    	作用：基本是C1&S1的副本
+
+		    	C2S2
+			|--------------|--------------|-------------------|
+			| Time (4byte) | Time (4byte) | Random (1528byte) |
+			|--------------|--------------|-------------------|
+
+			1、 time : 4字节
+				包含有对方发送过来 s1 或 c1 的时间戳
+				这个字段必须包含终端在S1 (给 C2) 或者 C1 (给 S2) 发的 timestamp。
+				
+			2、 time2 : 4字节
+				包含有对方发送过来的前一个包(s1或者c1)的时间戳
+				这个字段必须包含终端先前发出数据包 (s1 或者 c1) timestamp。
+
+			3、 随机数 : 1528字节
+				包含有对方发送过来的随机数据字段,每个通信端点可以使用 time1 和 time2 字段,以及当前的时间戳,来快速估计带宽和/或连接延时,
+				但这个数值基本上没法用.
+
+			4、 校验 : S1 == C2  或者  C1 == S2
+
+		2、 复杂握手：
+			作用：主要是用来提供对 C1 S1 的验证
+
+			C2S2
+			|--------------------|------------------|
+			| Random (1504 byte) | Digest (32 byte) |
+			|--------------------|------------------|
+
+			验证算法: 
+				分别拿到C1 和S1的数据，按照上文定义的计算方法再将C1或S1的digest字段计算一遍，跟当前从C1和S1中拿到的Digest字段进行比较
+			
+*/
+
+
+// 
 static int
 	SHandShake(RTMP *r)
 {
@@ -3972,6 +4125,7 @@ static int
 	uint32_t uptime;
 	int bMatch;
 
+	//Read C0 版本号
 	if (ReadN(r, serverbuf, 1) != 1)	/* 0x03 or 0x06 */
 		return FALSE;
 
@@ -3984,21 +4138,29 @@ static int
 		return FALSE;
 	}
 
+	//S1 time 4字节
 	uptime = htonl(RTMP_GetTime());
 	memcpy(serversig, &uptime, 4);
 
+	//S1 0值 4字节
 	memset(&serversig[4], 0, 4);
 #ifdef _DEBUG
 	for (i = 8; i < RTMP_SIG_SIZE; i++)
 		serversig[i] = 0xff;
 #else
+
+	//S1 随机数 1528字节
 	for (i = 8; i < RTMP_SIG_SIZE; i++)
 		serversig[i] = (char)(rand() % 256);
 #endif
 
+
+	// Send   S0S1
 	if (!WriteN(r, serverbuf, RTMP_SIG_SIZE + 1))
 		return FALSE;
 
+
+	// Read C1
 	if (ReadN(r, clientsig, RTMP_SIG_SIZE) != RTMP_SIG_SIZE)
 		return FALSE;
 
@@ -4012,9 +4174,12 @@ static int
 		clientsig[4], clientsig[5], clientsig[6], clientsig[7]);
 
 	/* 2nd part of handshake */
+
+	// Send S2
 	if (!WriteN(r, clientsig, RTMP_SIG_SIZE))
 		return FALSE;
 
+	// Read C2
 	if (ReadN(r, clientsig, RTMP_SIG_SIZE) != RTMP_SIG_SIZE)
 		return FALSE;
 
@@ -4176,7 +4341,8 @@ int
 	buffer = packet->m_body;
 	nChunkSize = r->m_outChunkSize;
 
-	//RTMP_Log(RTMP_LOGDEBUG2, "%s: fd=%d, size=%d", __FUNCTION__, r->m_sb.sb_socket,nSize);
+	//RTMP_Log(RTMP_LOGDEBUG2, "%s: fd=%d, size=%d", __FUNCTION__, r->m_sb.sb_socket,
+		//nSize);
 	/* send all chunks in one HTTP request */
 	if (r->Link.protocol & RTMP_FEATURE_HTTP)
 	{
@@ -4198,7 +4364,7 @@ int
 			nChunkSize = nSize;
 
 		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)header, hSize);
-		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)buffer, nChunkSize);
+		RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)buffer, nChunkSize);
 		if (tbuf)
 		{
 			memcpy(toff, header, nChunkSize + hSize);

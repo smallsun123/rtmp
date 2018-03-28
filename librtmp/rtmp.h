@@ -106,6 +106,65 @@ uint32_t RTMP_GetTime(void);
 #define RTMP_PACKET_SIZE_SMALL    2
 #define RTMP_PACKET_SIZE_MINIMUM  3
 
+/*
+      17 00 00 00 00 01    64 00 1e ff e1 00 18 67
+64 00 1e ac d9 40 a0 3d    a1 00 00 03 00 01 00 00
+03 00 32 0f 16 2d 96 01    00 06 68 eb e3 cb 22 c0
+*/
+
+typedef struct Tag_Video_AvcC
+{
+	unsigned char configurationVersion;			//01
+	
+	unsigned char AVCProfileIndication;			//64
+	
+	unsigned char profile_compatibility;		//00
+	
+	unsigned char AVCLevelIndication;			//1e
+	
+	unsigned char reserved_1;					
+
+	//非常重要，是 H.264 视频中 NALU 的长度，计算方法是 1 + (lengthSizeMinusOne & 3)，实际计算结果一直是4
+	unsigned char lengthSizeMinusOne;			//ff	[ 1 + (0xFF & 0x03) = 4 ]
+
+	unsigned char reserved_2;
+
+	// <- SPS 的个数，计算方法是 numOfSequenceParameterSets & 0x1F，实际计算结果一直为1
+	unsigned char numOfSequenceParameterSets;  	//e1	[ 0xE1 & 0x1F = 1]
+
+	unsigned int  sequenceParameterSetLength;	//00 18
+	//SPS - Data
+	unsigned char * sequenceParameterSetNALUnit;//67 64 00 1e ac d9 40 a0 3d a1 00 00 03 00 01 00 00 03 00 32 0f 16 2d 96
+
+
+	// <- PPS 的个数，一直为1
+	unsigned char numOfPictureParameterSets;    //01  
+	
+	unsigned int  pictureParameterSetLength;	//00 06
+	//PPS - Data
+	unsigned char * pictureParameterSetNALUnit; //68 eb e3 cb 22 c0
+	
+	unsigned char reserved_3;
+	
+	unsigned char chroma_format;
+	
+	unsigned char reserved_4;
+	
+	unsigned char bit_depth_luma_minus8;
+	
+	unsigned char reserved_5;
+	
+	unsigned char bit_depth_chroma_minus8;
+	
+	unsigned char numOfSequenceParameterSetExt;
+	
+	unsigned int  sequenceParameterSetExtLength;
+	
+	unsigned char * sequenceParameterSetExtNALUnit;
+	
+}Video_AvcC;
+
+
 typedef struct RTMPChunk
 {
 	int c_headerSize;
@@ -142,6 +201,7 @@ typedef struct RTMPSockBuf
 void RTMPPacket_Copy_Free(RTMPPacket *p);
 void RTMPPacket_Copy(RTMPPacket *dst, RTMPPacket *src);
 void RTMPPacket_Copy1(RTMPPacket *dst, RTMPPacket *src);
+
 
 void RTMPPacket_Reset(RTMPPacket *p);
 void RTMPPacket_Dump(RTMPPacket *p);
