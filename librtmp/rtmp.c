@@ -172,8 +172,6 @@ void
 	RTMP_ctrlC = TRUE;
 }
 
-}
-
 void RTMPPacket_Copy1(RTMPPacket *dst, RTMPPacket *src)
 {
 	dst->m_headerType = src->m_headerType;				
@@ -3704,8 +3702,117 @@ static int
 	return 4;
 }
 
-int
-	RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
+//#if 0
+/*
+一、  Chunk Format（块格式）
+	|--------------|----------------|--------------------|------------|
+	| Basic Header | Message Header | Extended Timestamp | Chunk Data |
+	|--------------|----------------|--------------------|------------|
+	|<---------------- Chunk Header -------------------->|
+
+	1、 Basic Header(基本的头信息): 
+		 0  1  2  3  4  5  6  7
+		|--+--+--+--+--+--+--+--+
+		| Fmt |  	cs id 	|									csid = [3, 63]
+		|-----|-----------------|
+
+		 0  1  2  3  4  5  6  7  0  1  2  3  4  5  6  7
+		|--+--+--+--+--+--+--+--|--+--+--+--+--+--+--+--|
+		| Fmt |  	   0        |	    CSID		|					csid = [64, 319]
+		|-----|-----------------|-----------------------|
+
+		 0  1  2  3  4  5  6  7  0  1  2  3  4  5  6  7  0  1  2  3  4  5  6  7
+		|--+--+--+--+--+--+--+--|--+--+--+--+--+--+--+--|--+--+--+--+--+--+--+--+
+		| Fmt |        1        |			    CSID				|	csid = [64, 65599]
+		|-----|-----------------|-----------------------------------------------|
+
+		1) CSID ()---- chunk stream ID（流通道Id），用来唯一标识一个特定的流通道,  Basic Header的长度取决于 CSID 的大小
+			一般  Basic Header 占用1个字节, 
+				CSID占6位，6位最多可以表示64个数，因此这种情况下CSID在［0，63］之间，其中用户可自定义的范围为［3，63］。 
+				
+			特殊  CSID，0，1，2由协议保留表示特殊信息:
+		
+			0代表 Basic Header 占用2个字节,
+				第一个字节的 CSID 全0, 第二个字节为 CSID, 8位 可以表示 [0，255], + 64 = [64, 319]
+				
+			1代表 Basic Header 占用3个字节,
+				第一个字节的 CSID = 1, 第二三个字节为 CSID, 16位可以表示 [0，65535], + 64 = [64, 65599], 小端存取, CSID[2] << 8 | CSID[1]
+				
+			2代表 该chunk是控制信息和一些命令信息，后面会有详细的介绍。 
+			
+		2) fmt  (2bit)---- chunk type（chunk的类型），chunk type决定了后面Message Header的格式
+
+			fmt == 0, (11 byte) Message_Header = Time(3byte) + MessageLen(3byte) + MessageTypeID(1byte) + Message_Stream_ID(4byte), timestamp == 绝对值
+			
+			fmt == 1, (7 byte) Message_Header = Time(3byte) + MessageLen(3byte) + MessageTypeID(1byt), timestamp == 时间差值 
+			
+				Message Header占用7个字节，省去了表示msg stream id的4个字节，表示此chunk和上一次发的chunk所在的流相同，
+				如果在发送端只和对端有一个流链接的时候可以尽量去采取这种格式。 
+				timestamp delta：占用3个字节，
+				注意这里和 fmt == 0 时不同，存储的是和上一个 chunk 的时间差。类似上面提到的timestamp，
+				当它的值超过3个字节所能表示的最大值时，三个字节都置为1，实际的时间戳差值就会转存到Extended Timestamp字段中，
+				接受端在判断timestamp delta字段24个位都为1时就会去Extended timestamp中解析时机的与上次时间戳的差值。 
+
+			fmt == 2, (3 byte) Message_Header = Time(3byte), timestamp == 时间差值 
+			
+				Message Header占用3个字节，相对于type＝1格式又省去了表示消息长度的3个字节和表示消息类型的1个字节，
+				表示此chunk和上一次发送的chunk所在的流、消息的长度和消息的类型都相同。余下的这三个字节表示timestamp delta，使用同type＝1 
+
+			fmt == 3, (0 byte) , timestamp == 时间差值
+
+				它表示这个chunk的Message Header和上一个是完全相同的，自然就不用再传输一遍了。
+				当它跟在 fmt == 0 的chunk后面时，表示和前一个chunk的时间戳都是相同的。
+				什么时候连时间戳都相同呢？就是一个Message拆分成了多个chunk，这个chunk和上一个chunk同属于一个Message。
+				当它跟在 fmt == 1 或者 fmt == 2 的chunk后面时，表示和前一个chunk的时间戳的差是相同的。
+				比如第一个chunk的Type＝0，timestamp＝100，第二个chunk的Type＝2，timestamp delta＝20，表示时间戳为100+20=120，
+				第三个chunk的Type＝3，表示timestamp delta＝20，时间戳为120+20=140 
+
+	2、 Message Header（消息的头信息)
+	
+		|0  1  2  3  4  5  6  7 | 0  1  2  3  4  5  6  7| 0  1  2  3  4  5  6  7| 0  1  2  3  4  5  6  7|
+		|--+--+--+--+--+--+--+--|--+--+--+--+--+--+--+--|--+--+--+--+--+--+--+--|--+--+--+--+--+--+--+--|
+		|					timestamp(3byte)					|     message length	>
+		|-----------------------------------------------------------------------|=======================|
+		>       		message length(3byte)		| messagetypeid (1byte) |   message stream id	>
+		|===============================================|-----------------------|=======================|
+		>                           message stream id(4byte)				|
+		|=======================================================================|
+
+		1、 timestamp（时间戳）：占用3个字节，因此它最多能表示到 16777215 = 0xFFFFFF = 2^24-1, 当它的值超过这个最大值时，这三个字节都置为1，
+			这样实际的 timestamp 会转存到 Extended Timestamp 字段中，
+			接受端在判断 timestamp 字段 24个位 都为1时就会去 Extended timestamp 中解析实际的时间戳。
+
+			T = timestatmp == 0xFFFFFF ? timestamp : Extended_timestamp
+
+		2、 message length（消息数据的长度）：占用3个字节，表示实际发送的消息的数据如音频帧、视频帧等数据的长度，单位是字节。
+			注意这里是Message的长度，也就是chunk属于的Message的总数据长度，而不是chunk本身Data的数据的长度。
+
+			VideoData / AudioData Length, 实际音视频数据长度
+
+		3、 message type id(消息的类型id)：占用1个字节，表示实际发送的数据的类型
+
+			0x01 --- Chunk Size
+			0x03 --- Report
+			0x04 --- Control
+			0x05 --- Server BandWidth
+			0x06 --- Client BandWidth
+			0x08 --- AudioData
+			0x09 --- VideoData
+			0x12 --- Indo Metadata
+			0x14 --- Invoke
+
+		4、 msg stream id（消息的流id）：占用4个字节，表示该 chunk 所在的 流的ID，和 Basic Header 的 CSID 一样，它采用小端存储的方式，
+
+	3、 Extended Timestamp（扩展时间戳）： 时间戳实际值，并非时间戳差值
+		上面我们提到在chunk中会有时间戳 timestamp 和时间戳差 timestamp delta，并且它们不会和 此字段 同时存在，
+		只有这两者之一大于3个字节能表示的最大数值 0xFFFFFF＝16777215 时，才会用这个字段来表示真正的时间戳，否则这个字段为0。
+		扩展时间戳占4个字节，能表示的最大数值就是 0xFFFFFFFF＝4294967295。当扩展时间戳启用时，timestamp字段或者timestamp delta要全置为1，
+		表示应该去扩展时间戳字段来提取真正的时间戳或者时间戳差。注意扩展时间戳存储的是完整值，而不是减去时间戳或者时间戳差的值。
+*/
+//#endif
+
+
+int RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
 {
 	uint8_t hbuf[RTMP_MAX_HEADER_SIZE] = { 0 };
 	char *header = (char *)hbuf;
@@ -3795,6 +3902,7 @@ int
 		return FALSE;
 	}
 
+	//MessageHeader + BasicHeader
 	hSize = nSize + (header - (char *)hbuf);
 
 	if (nSize >= 3)
@@ -3882,9 +3990,7 @@ int
 
 	if (RTMPPacket_IsReady(packet))
 	{
-		printf("-----------read 1-------------\n");
-		RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)packet->m_body, packet->m_nBodySize);
-		printf("-----------read 2-------------\n\n");
+		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)packet->m_body, packet->m_nBodySize);
 	
 		/* make packet's timestamp absolute */
 		if (!packet->m_hasAbsTimestamp)
@@ -4364,7 +4470,7 @@ int
 			nChunkSize = nSize;
 
 		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)header, hSize);
-		RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)buffer, nChunkSize);
+		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)buffer, nChunkSize);
 		if (tbuf)
 		{
 			memcpy(toff, header, nChunkSize + hSize);

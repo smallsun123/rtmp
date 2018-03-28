@@ -813,16 +813,16 @@ void distribute_to_players(APP *app, RTMP *rtmp, RTMPPacket *packet)
 			RTMPPacket_Alloc(&pkt, publish->sps_pps->m_nBodySize);
 			RTMPPacket_Copy1(&pkt, publish->sps_pps);
 			RTMP_SendPacket(node->rtmp, &pkt, FALSE);
-			RTMP_LogHexString(RTMP_LOGERROR, pkt.m_body, pkt.m_nBodySize);
+			//RTMP_LogHexString(RTMP_LOGERROR, pkt.m_body, pkt.m_nBodySize);
 			RTMPPacket_Free(&pkt);
 
-			printf("====================\n");
+			//printf("====================\n");
 			
 			memset(&pkt, 0, sizeof(RTMPPacket));
 			RTMPPacket_Alloc(&pkt, publish->idr->m_nBodySize);
 			RTMPPacket_Copy1(&pkt, publish->idr);
 			RTMP_SendPacket(node->rtmp, &pkt, FALSE);
-			RTMP_LogHexString(RTMP_LOGERROR, pkt.m_body, pkt.m_nBodySize);
+			//RTMP_LogHexString(RTMP_LOGERROR, pkt.m_body, pkt.m_nBodySize);
 			RTMPPacket_Free(&pkt);
 		}	
 
