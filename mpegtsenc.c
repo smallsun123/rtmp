@@ -1346,6 +1346,7 @@ TDT,TOT,ST | 0x0014
 
 */
 
+
 /*
 	PMT格式( Program Map Table，节目映射表 )
 	
@@ -1403,6 +1404,182 @@ TDT,TOT,ST | 0x0014
 21. CRC32				32bit		前面数据的CRC32校验码
 ----------------------------------------------------------------------------------------------------4byte
 
+*/
+
+/*
+1. 网络抽象层单元类型 (NALU)
+
+	NALU 头由一个字节组成, 它的语法如下:
+	      +---------------+
+	      |0|1|2|3|4|5|6|7|
+	      +-+-+-+-+-+-+-+-+
+	      |F|NRI|  Type   |
+	      +---------------+
+
+	1) F: 1 个比特. forbidden_zero_bit. 在 H.264 规范中规定了这一位必须为 0.
+	
+	2) NRI: 2 个比特.
+		nal_ref_idc. 取 00 ~ 11, 似乎指示这个 NALU 的重要性, 如 00 的 NALU 解码器可以丢弃它而不影响图像的回放. 不过一般情况下不太关心这个属性.
+		
+	3) Type: 5 个比特.
+		nal_unit_type. 这个 NALU 单元的类型. 简述如下:
+		0     没有定义
+		1-23  NAL单元  单个 NAL 单元包.
+		24    STAP-A   单一时间的组合包
+		25    STAP-B   单一时间的组合包
+		26    MTAP16   多个时间的组合包
+		27    MTAP24   多个时间的组合包
+		28    FU-A     分片的单元
+		29    FU-B     分片的单元
+		30-31 没有定义
+
+2. 打包模式
+	下面是 RFC 3550 中规定的 
+	
+	1) RTP 头的结构. 	固定部分共12字节
+	
+		0                   1                   2                   3
+		0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2
+		+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+		|V=2|P|X|  CC   |M|     PT      |       sequence number         |
+		+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+		|                           timestamp                           |
+		+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+		|           synchronization source (SSRC) identifier            |
+		+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+		|            contributing source (CSRC) identifiers             |
+		|                             ....                              |
+		+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+		
+		负载类型 Payload type (PT): 7 bits
+		序列号 Sequence number (SN): 16 bits
+		时间戳 Timestamp: 32 bits
+
+	2) 负载(Payload)结构
+
+		RTP Payload 的第一个字节, 可以看出它和 H.264 的 NALU 头结构是一样的.
+
+		+---------------+
+		|0|1|2|3|4|5|6|7|
+		+-+-+-+-+-+-+-+-+
+		|F|NRI|  Type   |
+		+---------------+
+
+		Type :
+			24    STAP-A   单一时间的组合包
+			25    STAP-B   单一时间的组合包
+			26    MTAP16   多个时间的组合包
+			27    MTAP24   多个时间的组合包
+			28    FU-A     分片的单元
+			29    FU-B     分片的单元
+			30-31 		没有定义
+
+		可能的结构类型分别有:
+
+			1、 单一 NAL 单元模式 
+				即一个 RTP 包仅由一个完整的 NALU 组成. 这种情况下 RTP NAL 头类型字段和原始的 H.264的 NALU 头类型字段是一样的.
+
+				1) 对于 NALU 的长度小于 MTU 大小的包, 一般采用单一 NAL 单元模式.
+
+				2) 对于一个原始的 H.264 NALU 单元常由 [Start Code] [NALU Header] [NALU Payload] 三部分组成, 
+					[Start Code] 用于标示这是一个 NALU 单元的开始, 必须是 "00 00 00 01" 或 "00 00 01", 
+					[NALU Header] 仅一个字节, 
+					[NALU Payload] 其后都是 NALU 单元内容.
+					
+				3) 打包时去除 [Start Code] "00 00 01" 或 "00 00 00 01" 的开始码, 把其他数据封包的 RTP 包即可.
+
+				0                   1                   2                   3
+				0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|F|NRI|  type   |                                               |
+				+-+-+-+-+-+-+-+-+                               		    |
+				|<-NALU Header->|<--- PayLoad ---                               |
+				|               Bytes 2..n of a Single NAL unit                 |
+				|                                                               |
+				|                               +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|                               :...OPTIONAL RTP padding        |
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+			2、 组合封包模式
+				即可能是由多个 NAL 单元组成一个 RTP 包. 分别有4种组合方式: 
+					STAP-A, 
+					STAP-B, 
+					MTAP16, 
+					MTAP24.
+					那么这里的类型值分别是 24, 25, 26 以及 27.
+
+				1) 当 NALU 的长度特别小时, 可以把几个 NALU 单元封在一个 RTP 包中.
+
+				0                   1                   2                   3
+				0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|                          RTP Header                           |
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|STAP-A NAL HDR |         NALU 1 Size           | NALU 1 HDR    |
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|                         NALU 1 Data                           |
+				:                                                               :
+				+               +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|               | NALU 2 Size                   | NALU 2 HDR    |
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|                         NALU 2 Data                           |
+				:                                                               :
+				|                               +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|                               :...OPTIONAL RTP padding        |
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+					1. STAP-A_NAL_Header, (1byte)
+					2. STAP-A_NALU_1_Size, (2byte)
+						H264_NALU_1, 去除 [Start Code]， H264_NALU_1_Header (1byte), H264_NALU_1_PayLoad()
+					3. STAP-A_NALU_2_Size, (2byte)
+						H264_NALU_2, 去除 [Start Code]， H264_NALU_2_Header (1byte), H264_NALU_2_PayLoad()
+
+				----------------------------------------------------------------------------------------------------------------------
+				 RTP Header | STAP-A NAL Header(1byte) | H264_NALU Size (2byte) | H264_NALU PayLoad | size(2byte) | payload | ...
+				-----------------------------------------------------------------------------------------------------------------------
+
+			3、 分片封包模式
+				用于把一个 NALU 单元封装成多个 RTP 包. 存在两种类型 FU-A 和 FU-B. 类型值分别是 28 和 29.
+
+				1) 当 NALU 的长度超过 MTU 时, 就必须对 NALU 单元进行分片封包. 也称为 Fragmentation Units (FUs).
+
+					RealDataLen = MTU(1500) - IP数据报首部(20) - UDP数据报首部(8) = 1472
+
+					RealDataLen = MTU(1500) - IP数据报首部(20) - UDP数据报首部(8) - RTP固定头(12) = 1460
+
+				0                   1                   2                   3
+				0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				| FU indicator  |   FU header   |                               |
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               |
+				|                                                               |
+				|                         FU payload                            |
+				|                                                               |
+				|                               +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+				|                               :...OPTIONAL RTP padding        |
+				+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+				1、 The FU indicator octet has the following format:
+					+---------------+
+					|0|1|2|3|4|5|6|7|
+					+-+-+-+-+-+-+-+-+
+					|F|NRI|  Type   |
+					+---------------+
+				2、 The FU header has the following format:
+					+---------------+
+					|0|1|2|3|4|5|6|7|
+					+-+-+-+-+-+-+-+-+
+					|S|E|R|  Type   |
+					+---------------+
+
+					S: 1 bit 当设置成1,开始位指示分片NAL单元的开始。当跟随的FU荷载不是分片NAL单元荷载的开始，开始位设为0。
+
+					E: 1 bit 当设置成1, 结束位指示分片NAL单元的结束，即, 荷载的最后字节也是分片NAL单元的最后一个字节。
+						当跟随的 FU 荷载不是分片NAL单元的最后分片,结束位设置为0。
+
+					R: 1 bit 保留位必须设置为0，接收者必须忽略该位
+
+					打包时，原始的 NAL 头的前三位为 FU indicator 的前三位，原始的 NAL 头的后五位为 FU header 的后五位。
 */
 
 /*
@@ -1638,6 +1815,7 @@ RBSP
 	11.流结束符在比特流中的最后。
 */
 
+
 /*
 
 一、第一个TS包   这一帧数据(也就是一个PES包),共有119756个字节,一共是637个TS包(119756 / 188 = 637).
@@ -1665,6 +1843,8 @@ RBSP
 11. NALU Unit : 28 EE 3C B0 
 
 
+	//(IDR Frame -> 41 & 0x1f == 1)   i 帧
+
 	//(IDR Frame -> 25 & 0x1f == 5)   (IDR Frame -> 65 & 0x1f == 5)
 12. NALU Delimiter : 00 00 00 01 
 13. NALU Unit : 25 88 80 0E 3F D5 2E 71 35 C8 A5 E1 CE F4 89 B3 F2 CA D2 65 75 33 63 B1 BA B6 33 B0 7B 80 A8 26 D0 77 01 FF 9A CB 85 C7 D1 DC A8 22 E9 BE 10 89 F9 CF 1A BA 6D 12 3D 19 0C 77 33 1B 7C 03 9B 3D F1 FF 02 AB C6 73 8A DB 51 
@@ -1679,6 +1859,52 @@ TsPacket=TsHeader(4bytes)+TsPayload(184bytes)
 
 三、最后一个TS包 = TS头 + TS自适应字段 + 填充字段 + TS Payload
 
+四、 h.264判断一帧的结束
+
+	第一种情况 没有下一个nal则表示当前的nal是当前帧的最后一部分数据。
+
+	第二种情况  nal_unit_type ！=next_nal_unit_type  则表示上一帧已经结束。
+
+	第三种情况 nal_unit_type == next_nal_unit_type的时候有可能是同一帧的数据，也有可能是不同帧的数据。（如：两个PP帧在一块就有可能出现这种情况）
+
+	出现第三种情况的时候我们需要分析slice_header里面的frame_num这一个值。如果frame_num != next_frame_num 则表示当前nal已经是当前帧的最后一部分数据。
+
+	slice_header( ) {
+
+		first_mb_in_slice 							2 ue(v)
+		
+		slice_type 									2 ue(v)
+		
+		pic_parameter_set_id 							2 ue(v)
+
+		if(separate_colour_plane_flag == 1)
+			colour_plane_id							2  u(2)
+		
+		frame_num 									2 u(v)
+		
+		if( !frame_mbs_only_flag ) {
+		
+			field_pic_flag 							2 u(1)
+			
+			if( field_pic_flag )
+				bottom_field_flag 					2 u(1)  
+		}
+		
+		if( nal_unit_type = = 5 )
+			idr_pic_id 2 ue(v)
+			
+		if( pic_order_cnt_type = = 0 ) {
+		
+			pic_order_cnt_lsb 2 u(v)
+			
+			if( pic_order_present_flag && !field_pic_flag )
+				delta_pic_order_cnt_bottom 2 se(v)
+		}  
+		..................................  
+		..................................  
+		if( num_slice_groups_minus1 > 0 && slice_group_map_type >= 3 && slice_group_map_type <= 5)  
+			slice_group_change_cycle 2 u(v)  
+	}
 */
 
 	/*

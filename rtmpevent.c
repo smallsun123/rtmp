@@ -115,6 +115,10 @@ SAVC(code);
 SAVC(description);
 SAVC(secureToken);
 
+SAVC(releaseStream);
+SAVC(FCPublish);
+
+
 SAVC(onMetaData);
 SAVC(duration);
 SAVC(video);
@@ -122,12 +126,19 @@ SAVC(audio);
 
 SAVC(onStatus);
 SAVC(status);
+
+SAVC(error);
+
 static const AVal av_NetStream_Play_Start = AVC("NetStream.Play.Start");
 static const AVal av_Started_playing = AVC("Started playing");
 static const AVal av_NetStream_Play_Stop = AVC("NetStream.Play.Stop");
 static const AVal av_Stopped_playing = AVC("Stopped playing");
 static const AVal av_NetStream_Publish_Start = AVC("NetStream.Publish.Start");
 static const AVal av_Started_publishing = AVC("Started publishing");
+
+static const AVal av_NetStream_Publish_BadName = AVC("NetStream.Publish.BadName");
+static const AVal av_Already_Publishing = AVC("Already publishing");
+
 SAVC(details);
 SAVC(clientid);
 static const AVal av_NetStream_Authenticate_UsherToken = AVC("NetStream.Authenticate.UsherToken");
@@ -590,7 +601,7 @@ SendPlayStart(RTMP *r)
 
 
 static int
-SendOnStatus(RTMP *r, AVal code, AVal description)
+SendOnStatus(RTMP *r, AVal status, AVal code, AVal description)
 {
 	RTMPPacket packet;
 	char pbuf[512], *pend = pbuf+sizeof(pbuf);
@@ -609,7 +620,7 @@ SendOnStatus(RTMP *r, AVal code, AVal description)
 	enc = AMF_EncodeNull(enc, pend);
 
 	enc = AMF_EncodeObjectStart(enc, pend);
-	enc = AMF_EncodeNamedString(enc, pend, &av_level, &av_status);
+	enc = AMF_EncodeNamedString(enc, pend, &av_level, &status);
 	enc = AMF_EncodeNamedString(enc, pend, &av_code, &code);
 	enc = AMF_EncodeNamedString(enc, pend, &av_description, &description);
 	enc = AMF_EncodeNamedString(enc, pend, &av_details, &r->Link.playpath);
@@ -875,10 +886,8 @@ static int ServeInvoke(APP *server, RTMP * r, RTMPPacket *packet, unsigned int o
 	AVal method;
 	AMFProp_GetString(AMF_GetProp(&obj, NULL, 0), &method);
 	double txn = AMFProp_GetNumber(AMF_GetProp(&obj, NULL, 1));
-	RTMP_Log(RTMP_LOGDEBUG, "%s, client invoking <%s>", __FUNCTION__, method.av_val);
+	RTMP_Log(RTMP_LOGDEBUG, "%s, client invoking <%s>, txn = %lf", __FUNCTION__, method.av_val, txn);
 
-
-	printf("client invoking <%s>\n", method.av_val);
 	if (AVMATCH(&method, &av_connect))
 	{
 		AMFObject cobj;
@@ -960,7 +969,22 @@ static int ServeInvoke(APP *server, RTMP * r, RTMPPacket *packet, unsigned int o
 		}
 		SendConnectResult(r, txn);
 
-		SendChunkSize(r);
+	}
+	else if (AVMATCH(&method, &av_releaseStream))
+	{
+		printf("releaseStream-------------\n\n");
+		SendResultNumber(r, txn, ++server->streamID);
+
+		AMFProp_GetString(AMF_GetProp(&obj, NULL, 3), &r->Link.playpath);
+		if (!r->Link.playpath.av_len)
+			return 0;
+
+		//SendOnStatus(r, av_error, av_NetStream_Publish_BadName, av_Already_Publishing);
+	}
+	else if (AVMATCH(&method, &av_FCPublish))
+	{
+		printf("FCPublish-------------\n\n");
+		SendResultNumber(r, txn, ++server->streamID);
 	}
 	else if (AVMATCH(&method, &av_createStream))
 	{
@@ -1007,13 +1031,11 @@ static int ServeInvoke(APP *server, RTMP * r, RTMPPacket *packet, unsigned int o
 		add_play_to_publish(publish, play);
 //#endif
 
-		
-
+		SendChunkSize(r);
 		RTMP_SendCtrl(r, 0, 1, 0);
-		SendOnStatus(r, av_NetStream_Play_Start, av_Started_playing);
+		SendOnStatus(r, av_status, av_NetStream_Play_Start, av_Started_playing);
 
 		//SendPlayStart(r);
-
 	}
 	else if (AVMATCH(&method, &av_publish)){
 		printf("publish-------------\n\n");
@@ -1022,11 +1044,11 @@ static int ServeInvoke(APP *server, RTMP * r, RTMPPacket *packet, unsigned int o
 		if (!r->Link.playpath.av_len)
 			return 0;
 		
-		SendOnStatus(r, av_NetStream_Publish_Start, av_Started_publishing);
-
 		RtmpEvent* publish = find_rtmp_event_in_app_byrtmp(myapp, r);
 		sprintf(publish->playpath, "%s", r->Link.playpath.av_val);
 		publish->establish = 1;
+
+		SendOnStatus(r, av_status, av_NetStream_Publish_Start, av_Started_publishing);
 	}
 
 	AMF_Reset(&obj);
@@ -1166,6 +1188,8 @@ static int ServePacket(APP *server, RTMP *r, RTMPPacket *packet)
 		publish->Metadata = malloc(sizeof(RTMPPacket));
 		RTMPPacket_Alloc(publish->Metadata, packet->m_nBodySize);
 		RTMPPacket_Copy1(publish->Metadata, packet);
+
+		//RTMP_LogHexString(RTMP_LOGERROR, packet->m_body, packet->m_nBodySize);
 
 		break;
 
