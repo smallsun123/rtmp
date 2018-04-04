@@ -27,6 +27,12 @@ typedef struct RtmpEvent{
 	int sendaacsequence;
 	int nplay;
 
+	int videocount;
+	int audiocount;
+
+	Tag_Video_AvcC avcc;
+	AudioSpecificConfig aacc;
+
 }RtmpEvent;
 
 typedef struct APP{

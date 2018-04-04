@@ -35,6 +35,29 @@
 
 #include "amf.h"
 
+
+#include <stdlib.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#ifdef _MSC_VER
+#ifndef _STDINT
+typedef __int32 int32_t;
+typedef unsigned __int32 uint32_t;
+typedef __int64 int64_t;
+typedef unsigned __int64 uint64_t;
+typedef signed char int8_t;
+typedef unsigned char uint8_t;
+typedef short int16_t;
+typedef unsigned short uint16_t;
+#endif
+#else
+#include <stdint.h>
+#endif
+
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -101,10 +124,10 @@ uint32_t RTMP_GetTime(void);
 
 #define RTMP_MAX_HEADER_SIZE 18
 
-#define RTMP_PACKET_SIZE_LARGE    0
-#define RTMP_PACKET_SIZE_MEDIUM   1
-#define RTMP_PACKET_SIZE_SMALL    2
-#define RTMP_PACKET_SIZE_MINIMUM  3
+#define RTMP_PACKET_SIZE_LARGE    0			// 11
+#define RTMP_PACKET_SIZE_MEDIUM   1			// 7
+#define RTMP_PACKET_SIZE_SMALL    2			// 3
+#define RTMP_PACKET_SIZE_MINIMUM  3			// 0
 
 /*
       17 00 00 00 00 01    64 00 1e ff e1 00 18 67
@@ -162,8 +185,16 @@ typedef struct Tag_Video_AvcC
 	
 	unsigned char * sequenceParameterSetExtNALUnit;
 	
-}Video_AvcC;
+}Tag_Video_AvcC;
 
+typedef struct AudioSpecificConfig{
+	int aac_profile;
+	int sampling_frequency_index;
+	int channel_configuration;
+	int framelength_flag;
+	int depends_on_core_coder;
+	int extension_flag;
+}AudioSpecificConfig;
 
 typedef struct RTMPChunk
 {
@@ -197,7 +228,19 @@ typedef struct RTMPSockBuf
 	void *sb_ssl;
 } RTMPSockBuf;
 
+int rtmp_mpegts_write_frame(RTMPPacket *pkt, int* cc, Tag_Video_AvcC* avc, AudioSpecificConfig *aac);
 
+uint32_t crc32(int *crctable, uint32_t crc, const char *buf, int len);
+int Ts_Header(char *buf, int startflag, int pid, int adaptflag, int64_t pcr, int stuflen, int cont);
+int Ts_Packet_AV(RTMPPacket *packet, char *sps, int nsps, char *pps, int npps, int *cont, 
+	AudioSpecificConfig *aac);
+void Ts_Packet_Pmt(int pmt_pid, int video_pid, int audio_pid, char *buf);
+void Ts_Packet_Pat(int pat_pid, int pmt_pid, char *buf);
+int Pes_Packet_AV(RTMPPacket *packet, char *sps, int nsps, char *pps, int npps, char *buf, int key,
+	AudioSpecificConfig *aac);
+
+void Parse_AacConfigration(AudioSpecificConfig *aacc, RTMPPacket *packet);
+void Parse_AvcConfigration(Tag_Video_AvcC *avcc, RTMPPacket *packet);
 void RTMPPacket_Copy_Free(RTMPPacket *p);
 void RTMPPacket_Copy(RTMPPacket *dst, RTMPPacket *src);
 void RTMPPacket_Copy1(RTMPPacket *dst, RTMPPacket *src);

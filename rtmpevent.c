@@ -1122,15 +1122,30 @@ static int ServePacket(APP *server, RTMP *r, RTMPPacket *packet)
 			RTMPPacket_Alloc(publish->aac_sequence_header, packet->m_nBodySize);
 			RTMPPacket_Copy1(publish->aac_sequence_header, packet);
 
+			RTMP_LogHexString(RTMP_LOGERROR, (uint8_t *)packet->m_body, packet->m_nBodySize);
+
+			Parse_AacConfigration(&publish->aacc, packet);
+
 			break;
 		}
 
-		distribute_to_players(myapp, r, packet);
+		//Ts_Packet_AV(packet, publish->avcc.sequenceParameterSetNALUnit, 
+			//publish->avcc.sequenceParameterSetLength, 
+			//publish->avcc.pictureParameterSetNALUnit, 
+			//publish->avcc.pictureParameterSetLength, &publish->audiocount, &publish->aacc);
+
+		//distribute_to_players(myapp, r, packet);
+
+		rtmp_mpegts_write_frame(packet, &publish->audiocount, &publish->avcc, &publish->aacc);
 
 		break;
 
 	case RTMP_PACKET_TYPE_VIDEO:
 		//RTMP_Log(RTMP_LOGDEBUG, "%s, received: video %lu bytes", __FUNCTION__, packet.m_nBodySize);
+
+		//printf("------------1-----------\n");
+		//RTMP_LogHexString(RTMP_LOGERROR, packet->m_body, 5);
+		//printf("------------2-----------\n");
 
 		publish = find_rtmp_event_in_app_byrtmp(server, r);
 
@@ -1142,6 +1157,11 @@ static int ServePacket(APP *server, RTMP *r, RTMPPacket *packet)
 			RTMPPacket_Free(publish->sps_pps);
 			RTMPPacket_Alloc(publish->sps_pps, packet->m_nBodySize);
 			RTMPPacket_Copy1(publish->sps_pps, packet);
+
+			//RTMP_LogHexString(RTMP_LOGERROR, packet->m_body, packet->m_nBodySize);
+			memset(&publish->avcc, 0, sizeof(Tag_Video_AvcC));
+
+			Parse_AvcConfigration(&publish->avcc, packet);
 
 			//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)publish->sps_pps->m_body, publish->sps_pps->m_nBodySize);
 			break;
@@ -1158,8 +1178,15 @@ static int ServePacket(APP *server, RTMP *r, RTMPPacket *packet)
 
 			//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)publish->idr->m_body, publish->idr->m_nBodySize);
 		}
+
+		//Ts_Packet_AV(packet, publish->avcc.sequenceParameterSetNALUnit, 
+			//publish->avcc.sequenceParameterSetLength, 
+			//publish->avcc.pictureParameterSetNALUnit, 
+			//publish->avcc.pictureParameterSetLength, &publish->videocount, NULL);
+
+		rtmp_mpegts_write_frame(packet, &publish->videocount, &publish->avcc, &publish->aacc);
 		
-		distribute_to_players(myapp, r, packet);
+		//distribute_to_players(myapp, r, packet);
 
 		break;
 

@@ -71,6 +71,52 @@ TLS_CTX RTMP_TLS_ctx;
 
 static const int packetSize[] = { 12, 8, 4, 1 };
 
+static const int CRC_32_Table[] = {
+    0x00000000, 0xB71DC104, 0x6E3B8209, 0xD926430D, 0xDC760413, 0x6B6BC517,
+    0xB24D861A, 0x0550471E, 0xB8ED0826, 0x0FF0C922, 0xD6D68A2F, 0x61CB4B2B,
+    0x649B0C35, 0xD386CD31, 0x0AA08E3C, 0xBDBD4F38, 0x70DB114C, 0xC7C6D048,
+    0x1EE09345, 0xA9FD5241, 0xACAD155F, 0x1BB0D45B, 0xC2969756, 0x758B5652,
+    0xC836196A, 0x7F2BD86E, 0xA60D9B63, 0x11105A67, 0x14401D79, 0xA35DDC7D,
+    0x7A7B9F70, 0xCD665E74, 0xE0B62398, 0x57ABE29C, 0x8E8DA191, 0x39906095,
+    0x3CC0278B, 0x8BDDE68F, 0x52FBA582, 0xE5E66486, 0x585B2BBE, 0xEF46EABA,
+    0x3660A9B7, 0x817D68B3, 0x842D2FAD, 0x3330EEA9, 0xEA16ADA4, 0x5D0B6CA0,
+    0x906D32D4, 0x2770F3D0, 0xFE56B0DD, 0x494B71D9, 0x4C1B36C7, 0xFB06F7C3,
+    0x2220B4CE, 0x953D75CA, 0x28803AF2, 0x9F9DFBF6, 0x46BBB8FB, 0xF1A679FF,
+    0xF4F63EE1, 0x43EBFFE5, 0x9ACDBCE8, 0x2DD07DEC, 0x77708634, 0xC06D4730,
+    0x194B043D, 0xAE56C539, 0xAB068227, 0x1C1B4323, 0xC53D002E, 0x7220C12A,
+    0xCF9D8E12, 0x78804F16, 0xA1A60C1B, 0x16BBCD1F, 0x13EB8A01, 0xA4F64B05,
+    0x7DD00808, 0xCACDC90C, 0x07AB9778, 0xB0B6567C, 0x69901571, 0xDE8DD475,
+    0xDBDD936B, 0x6CC0526F, 0xB5E61162, 0x02FBD066, 0xBF469F5E, 0x085B5E5A,
+    0xD17D1D57, 0x6660DC53, 0x63309B4D, 0xD42D5A49, 0x0D0B1944, 0xBA16D840,
+    0x97C6A5AC, 0x20DB64A8, 0xF9FD27A5, 0x4EE0E6A1, 0x4BB0A1BF, 0xFCAD60BB,
+    0x258B23B6, 0x9296E2B2, 0x2F2BAD8A, 0x98366C8E, 0x41102F83, 0xF60DEE87,
+    0xF35DA999, 0x4440689D, 0x9D662B90, 0x2A7BEA94, 0xE71DB4E0, 0x500075E4,
+    0x892636E9, 0x3E3BF7ED, 0x3B6BB0F3, 0x8C7671F7, 0x555032FA, 0xE24DF3FE,
+    0x5FF0BCC6, 0xE8ED7DC2, 0x31CB3ECF, 0x86D6FFCB, 0x8386B8D5, 0x349B79D1,
+    0xEDBD3ADC, 0x5AA0FBD8, 0xEEE00C69, 0x59FDCD6D, 0x80DB8E60, 0x37C64F64,
+    0x3296087A, 0x858BC97E, 0x5CAD8A73, 0xEBB04B77, 0x560D044F, 0xE110C54B,
+    0x38368646, 0x8F2B4742, 0x8A7B005C, 0x3D66C158, 0xE4408255, 0x535D4351,
+    0x9E3B1D25, 0x2926DC21, 0xF0009F2C, 0x471D5E28, 0x424D1936, 0xF550D832,
+    0x2C769B3F, 0x9B6B5A3B, 0x26D61503, 0x91CBD407, 0x48ED970A, 0xFFF0560E,
+    0xFAA01110, 0x4DBDD014, 0x949B9319, 0x2386521D, 0x0E562FF1, 0xB94BEEF5,
+    0x606DADF8, 0xD7706CFC, 0xD2202BE2, 0x653DEAE6, 0xBC1BA9EB, 0x0B0668EF,
+    0xB6BB27D7, 0x01A6E6D3, 0xD880A5DE, 0x6F9D64DA, 0x6ACD23C4, 0xDDD0E2C0,
+    0x04F6A1CD, 0xB3EB60C9, 0x7E8D3EBD, 0xC990FFB9, 0x10B6BCB4, 0xA7AB7DB0,
+    0xA2FB3AAE, 0x15E6FBAA, 0xCCC0B8A7, 0x7BDD79A3, 0xC660369B, 0x717DF79F,
+    0xA85BB492, 0x1F467596, 0x1A163288, 0xAD0BF38C, 0x742DB081, 0xC3307185,
+    0x99908A5D, 0x2E8D4B59, 0xF7AB0854, 0x40B6C950, 0x45E68E4E, 0xF2FB4F4A,
+    0x2BDD0C47, 0x9CC0CD43, 0x217D827B, 0x9660437F, 0x4F460072, 0xF85BC176,
+    0xFD0B8668, 0x4A16476C, 0x93300461, 0x242DC565, 0xE94B9B11, 0x5E565A15,
+    0x87701918, 0x306DD81C, 0x353D9F02, 0x82205E06, 0x5B061D0B, 0xEC1BDC0F,
+    0x51A69337, 0xE6BB5233, 0x3F9D113E, 0x8880D03A, 0x8DD09724, 0x3ACD5620,
+    0xE3EB152D, 0x54F6D429, 0x7926A9C5, 0xCE3B68C1, 0x171D2BCC, 0xA000EAC8,
+    0xA550ADD6, 0x124D6CD2, 0xCB6B2FDF, 0x7C76EEDB, 0xC1CBA1E3, 0x76D660E7,
+    0xAFF023EA, 0x18EDE2EE, 0x1DBDA5F0, 0xAAA064F4, 0x738627F9, 0xC49BE6FD,
+    0x09FDB889, 0xBEE0798D, 0x67C63A80, 0xD0DBFB84, 0xD58BBC9A, 0x62967D9E,
+    0xBBB03E93, 0x0CADFF97, 0xB110B0AF, 0x060D71AB, 0xDF2B32A6, 0x6836F3A2,
+    0x6D66B4BC, 0xDA7B75B8, 0x035D36B5, 0xB440F7B1, 0x00000001
+};
+
 int RTMP_ctrlC;
 
 const char RTMPProtocolStrings[][7] = {
@@ -166,11 +212,900 @@ uint32_t
 #endif
 }
 
+#define ngx_movemem(dst, src, n)   (((u_char *) memmove(dst, src, n)) + (n))
+#define ngx_memset(buf, c, n)     (void) memset(buf, c, n)
+#define ngx_memcpy(dst, src, n)   (void) memcpy(dst, src, n)
+
+
 void
 	RTMP_UserInterrupt()
 {
 	RTMP_ctrlC = TRUE;
 }
+
+uint32_t crc32(int *crctable, uint32_t crc, const char *buf, int len)
+{
+	const uint8_t *end = buf + len;
+
+	while (buf < end)
+        crc = crctable[((uint8_t) crc) ^ *buf++] ^ (crc >> 8);
+
+    return crc;
+}
+
+static int write_pcr_bits(uint8_t *p, int64_t pcr)
+{
+    int64_t pcr_low = pcr % 300, pcr_high = pcr / 300;
+
+    *p++ = pcr_high >> 25;
+    *p++ = pcr_high >> 17;
+    *p++ = pcr_high >>  9;
+    *p++ = pcr_high >>  1;
+    *p++ = pcr_high <<  7 | pcr_low >> 8 | 0x7e;
+    *p++ = pcr_low;
+
+    return 6;
+}
+
+static char* mpegts_write_pcr_bits(uint8_t *p, int64_t pcr)
+{
+    int64_t pcr_low = pcr % 300, pcr_high = pcr / 300;
+
+    *p++ = pcr_high >> 25;
+    *p++ = pcr_high >> 17;
+    *p++ = pcr_high >>  9;
+    *p++ = pcr_high >>  1;
+    *p++ = pcr_high <<  7 | pcr_low >> 8 | 0x7e;
+    *p++ = pcr_low;
+
+    return p;
+}
+
+
+static char* write_pts(char *q, int fourbits, int64_t pts)
+{
+    int val;
+
+	//11 = both present, 01 is forbidden, 10 = only PTS, 00 = no PTS or DTS
+
+    val  = fourbits << 4 | (((pts >> 30) & 0x07) << 1) | 1;
+    *q++ = (char) val;
+    val  = (((pts >> 15) & 0x7fff) << 1) | 1;
+    *q++ = (char) (val >> 8);
+    *q++ = (char) val;
+    val  = (((pts) & 0x7fff) << 1) | 1;
+    *q++ = (char) (val >> 8);
+    *q++ = (char) val;
+
+	return q;
+}
+
+static void * rtmp_rmemcpy(void *dst, const void* src, int n)
+{
+    u_char     *d, *s;
+
+    d = dst;
+    s = (u_char*)src + n - 1;
+
+    while(s >= (u_char*)src) {
+        *d++ = *s--;
+    }
+
+    return dst;
+}
+
+static int rtmp_hls_append_aud(char *buf, int len)
+{
+    static u_char aud_nal[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xf0 };
+
+	char *p = buf;
+    if (sizeof(aud_nal) > len) {
+        return -1;
+    }
+
+	memcpy(p, aud_nal, sizeof(aud_nal));
+	p += sizeof(aud_nal);
+	
+    return p - buf;
+}
+
+static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int chancfg, int size){
+	char *p = buf;
+
+	*p++ = 0xff;
+    *p++ = 0xf1;
+    *p++ = (u_char) (((profile - 1) << 6) | (samplefreidx << 2) | ((chancfg & 0x04) >> 2));
+    *p++ = (u_char) (((chancfg & 0x03) << 6) | ((size >> 11) & 0x03));
+    *p++ = (u_char) (size >> 3);
+    *p++ = (u_char) ((size << 5) | 0x1f);
+    *p++ = 0xfc;
+
+	return p - buf;
+}
+
+static int rtmp_hls_append_sps_pps(char *buf, int len, char *sps, int nsps, char *pps, int npps)
+{
+	char *p = buf;
+	//sps
+	*p++ = 0x00;
+	*p++ = 0x00;
+	*p++ = 0x00;
+	*p++ = 0x01;
+	memcpy(p, sps, nsps);
+	p += nsps;
+
+	//pps
+	*p++ = 0x00;
+	*p++ = 0x00;
+	*p++ = 0x00;
+	*p++ = 0x01;
+	memcpy(p, pps, npps);
+	p += npps;
+
+	return p - buf;
+}
+
+
+int rtmp_mpegts_write_frame(RTMPPacket *pkt, int* cc, Tag_Video_AvcC* avc, AudioSpecificConfig *aac)
+{
+    int  pes_size, header_size, body_size, in_size, stuff_size, flags, blen, ret, size;
+    char  packet[188] = {0}, *p, *base, *pos, *last, buf[1024*1024] = {0}, *bp;
+    int   first, rc, pid, sid, key = 0;
+
+	int pmtpid = 0xf0 << 8 | 0x00;
+	int videopid = 0x01 << 8 | 0x00;
+	int audiopid = 0x01 << 8 | 0x01;
+
+	int64_t pts=0, dts=0;
+	uint32_t cts=0, rlen, len;
+	uint8_t src_nal_type, nal_type;
+
+	char *src;
+	int slen;
+	int aud_sent, sps_pps_sent;
+
+	bp = buf;
+	blen = sizeof(buf);
+
+	static FILE *pfile = NULL;
+	
+	if(pkt->m_packetType == RTMP_PACKET_TYPE_VIDEO){
+
+		if((pkt->m_body[0] & 0x0f) == 0x07){
+			src = pkt->m_body + 5;
+			slen = pkt->m_nBodySize - 5;
+		} else {
+			src = pkt->m_body + 1;
+			slen = pkt->m_nBodySize - 1;
+		}
+
+		//video tag  type|codeid  1byte
+		key = ((pkt->m_body[0] & 0xf0) >> 4) == 1;
+
+		//pts dts   Composition time offset   3byte
+		dts = (int64_t)pkt->m_nTimeStamp * 90;
+		memcpy(&cts, pkt->m_body+2, 3);
+		cts = ((cts & 0x00FF0000) >> 16) | ((cts & 0x000000FF) << 16) |
+	          (cts & 0x0000FF00);
+
+		pts = dts + cts * 90;
+
+		aud_sent = 0;
+		sps_pps_sent = 0;
+		
+		while(slen){
+
+			//data len  4byte
+			if(slen < 4)
+				return 0;
+			memcpy(&rlen, src, 4);
+			src += 4;
+			slen -= 4;
+
+			len = 0;
+	        rtmp_rmemcpy(&len, &rlen, 4);
+	        if (len == 0) {
+	            continue;
+	        }
+
+			if(slen < 1)
+				return 0;
+			memcpy(&src_nal_type, src, 1);
+			src++;
+			slen--;
+
+			nal_type = src_nal_type & 0x1f;
+
+			if (nal_type >= 7 && nal_type <= 9) {
+	            if (slen < len -1) {
+					return -1;
+	            }
+				src += len - 1;
+				slen -= len - 1;
+	            continue;
+	        }
+
+			if (!aud_sent) {
+	            switch (nal_type) {
+	                case 1:
+	                case 5:
+	                case 6:
+	                    ret = rtmp_hls_append_aud(bp, blen);
+						bp += ret;
+						blen -= ret;
+	                case 9:
+	                    aud_sent = 1;
+	                    break;
+	            }
+	        }
+
+			switch (nal_type) {
+	            case 1:
+	                sps_pps_sent = 0;
+	                break;
+	            case 5:
+	                if (sps_pps_sent) {
+	                    break;
+	                }
+
+					ret = rtmp_hls_append_sps_pps(bp, blen, avc->sequenceParameterSetNALUnit, 
+						avc->sequenceParameterSetLength, 
+						avc->pictureParameterSetNALUnit, 
+						avc->pictureParameterSetLength);
+					bp += ret;
+					blen -= ret;
+					
+	                sps_pps_sent = 1;
+	                break;
+	        }
+
+			/* AnnexB prefix */
+
+	        if (blen < 5) {
+				printf("---hls: not enough buffer for AnnexB prefix\n");
+	            return 0;
+	        }
+			
+			/* first AnnexB prefix is long (4 bytes) */
+
+	        if (blen == sizeof(buf)) {
+	            *bp++ = 0;
+	        }
+
+	        *bp++ = 0;
+	        *bp++ = 0;
+	        *bp++ = 1;
+	        *bp++ = src_nal_type;
+
+			/* NAL body */
+
+	        if (blen < len) {
+	            printf("---hls: not enough buffer for NAL\n");
+	            return 0;
+	        }
+
+			memcpy(bp, src, len - 1);
+			bp += len - 1;
+			blen -= len - 1;
+
+			src += len - 1;
+			slen -= len - 1;
+
+		}
+
+	}else{
+
+		if(((pkt->m_body[0] >> 4) & 0x0f) == 0x0a){
+			src = pkt->m_body + 2;
+			slen = pkt->m_nBodySize - 2;
+		} else {
+			src = pkt->m_body + 1;
+			slen = pkt->m_nBodySize - 1;
+		}
+		size = slen + 7;
+    	dts = pts = (uint64_t) pkt->m_nTimeStamp * 90;
+
+		ret = adts_write_frame_header(bp, aac->aac_profile, aac->sampling_frequency_index, 
+			aac->channel_configuration, size);
+
+		bp += ret;
+		blen -= ret;
+
+		if(blen < slen)
+			printf("---hls: not enough buffer for AAC");
+		memcpy(bp, src, slen);
+		bp += slen;
+		blen -= slen;
+	}
+		
+	pos = buf;
+	last = bp;
+
+	if(!pfile){
+		pfile = fopen("./test.ts", "a+");
+
+		memset(packet, 0, sizeof(packet));
+		Ts_Packet_Pat(0x00, pmtpid, packet);
+		fwrite(packet, 188, 1, pfile);
+
+		memset(packet, 0, sizeof(packet));
+		Ts_Packet_Pmt(pmtpid, videopid, audiopid, packet);
+		fwrite(packet, 188, 1, pfile);
+	}
+
+	if(pkt->m_packetType == RTMP_PACKET_TYPE_VIDEO){
+		pid = videopid;
+		sid = 0xe0;
+	} else {
+		pid = audiopid;
+		sid = 0xc0;
+	}
+
+
+	first = 1;
+    while (pos < last) {
+        p = packet;
+
+        *p++ = 0x47;
+        *p++ = (u_char) (pid >> 8);
+
+        if (first) {
+            p[-1] |= 0x40;
+        }
+
+        *p++ = (u_char) pid;
+        *p++ = 0x10 | ((*cc)++ & 0x0f); /* payload */
+
+        if (first) {
+
+            if (key) {
+                packet[3] |= 0x20; /* adaptation */
+
+                *p++ = 7;    /* size */
+                *p++ = 0x50; /* random access + PCR */
+
+                p = mpegts_write_pcr_bits(p, dts - 63000);
+            }
+
+            /* PES header */
+
+            *p++ = 0x00;
+            *p++ = 0x00;
+            *p++ = 0x01;
+            *p++ = (u_char) sid;
+
+            header_size = 5;
+            flags = 0x80; /* PTS */
+
+            if (dts != pts) {
+                header_size += 5;
+                flags |= 0x40; /* DTS */
+            }
+
+            pes_size = (last - pos) + header_size + 3;
+            if (pes_size > 0xffff) {
+                pes_size = 0;
+            }
+
+            *p++ = (u_char) (pes_size >> 8);
+            *p++ = (u_char) pes_size;
+            *p++ = 0x80; /* H222 */
+            *p++ = (u_char) flags;
+            *p++ = (u_char) header_size;
+
+            p = write_pts(p, flags >> 6, pts + 63000);
+
+            if (dts != pts) {
+                p = write_pts(p, 1, dts + 63000);
+            }
+
+            first = 0;
+        }
+
+        body_size = (int) (packet + sizeof(packet) - p);
+        in_size = (int) (last - pos);
+
+        if (body_size <= in_size) {
+            ngx_memcpy(p, pos, body_size);
+            pos += body_size;
+
+        } else {
+            stuff_size = (body_size - in_size);
+
+            if (packet[3] & 0x20) {
+
+                /* has adaptation */
+
+                base = &packet[5] + packet[4];
+                p = ngx_movemem(base + stuff_size, base, p - base);
+                ngx_memset(base, 0xff, stuff_size);
+                packet[4] += (char) stuff_size;
+
+            } else {
+
+                /* no adaptation */
+
+                packet[3] |= 0x20;
+                p = ngx_movemem(&packet[4] + stuff_size, &packet[4],
+                                p - &packet[4]);
+
+                packet[4] = (char) (stuff_size - 1);
+                if (stuff_size >= 2) {
+                    packet[5] = 0;
+                    ngx_memset(&packet[6], 0xff, stuff_size - 2);
+                }
+            }
+
+            ngx_memcpy(p, pos, in_size);
+            pos = last;
+        }
+
+		rc = fwrite(packet, 188, 1, pfile);
+        if (rc < 0) {
+            return rc;
+        }
+    }
+
+    return 0;
+}
+
+
+
+int Ts_Packet_AV(RTMPPacket *packet, char *sps, int nsps, char *pps, int npps, int *cont, 
+	AudioSpecificConfig *aac)
+{
+	int key = 0, pktlen=0, pid, ret;
+	static FILE *pfile = NULL;
+	char buf[1024*1024*5] = {0}, tsdata[188] = {0};
+	char *p;
+	int64_t pcr = 0;
+
+	int pmtpid = 0xf0 << 8 | 0x00;
+	int videopid = 0x01 << 8 | 0x00;
+	int audiopid = 0x01 << 8 | 0x01;
+	
+	if(packet->m_packetType == RTMP_PACKET_TYPE_VIDEO && packet->m_body[0] == 0x17){
+		key = 1;
+	}
+
+	if(!pfile){
+		pfile = fopen("./test.ts", "a+");
+
+		memset(tsdata, 0, sizeof(tsdata));
+		Ts_Packet_Pat(0x00, pmtpid, tsdata);
+		fwrite(tsdata, 188, 1, pfile);
+
+		memset(tsdata, 0, sizeof(tsdata));
+		Ts_Packet_Pmt(pmtpid, videopid, audiopid, tsdata);
+		fwrite(tsdata, 188, 1, pfile);
+	}
+
+	memset(buf, 0, sizeof(buf));
+	pktlen = Pes_Packet_AV(packet, sps, nsps, pps, npps, buf, key, aac);
+	p = buf;
+
+	if(packet->m_packetType == RTMP_PACKET_TYPE_VIDEO){
+		pid = videopid;
+		pcr = packet->m_nTimeStamp * 90 - 63000;
+	} else {
+		pid = audiopid;
+		pcr = 0;
+	}
+
+	memset(tsdata, 0, sizeof(tsdata));
+	ret = Ts_Header(tsdata, 1, pid, 3, pcr, 0, (*cont)++);
+	//printf("--headerlen=%d, pktlen=%d--\n", ret, pktlen);
+	memcpy(tsdata+ret, p, 188-ret);
+	pktlen -= 188-ret;
+	p += 188-ret;
+	fwrite(tsdata, 188, 1, pfile);
+	
+
+	while(pktlen > 0){
+		if(pktlen >= 188 - 4){
+			memset(tsdata, 0, sizeof(tsdata));
+			ret = Ts_Header(tsdata, 0, pid, 1, pcr, 0, (*cont)++);
+
+			//printf("--headerlen=%d, pktlen=%d--\n", ret, pktlen);
+			
+			memcpy(tsdata+ret, p, 188-ret);
+			pktlen -= 188-ret;
+			p += 188-ret;
+			fwrite(tsdata, 188, 1, pfile);
+		}
+
+		if(pktlen == 183){
+			memset(tsdata, 0, sizeof(tsdata));
+			ret = Ts_Header(tsdata, 0, pid, 1, pcr, 0, (*cont)++);			
+			memcpy(tsdata+ret, p, pktlen);
+			tsdata[187] = 0xff;
+			break;
+		}
+		
+		if(pktlen <= 188 - 6){
+			memset(tsdata, 0, sizeof(tsdata));
+			ret = 188 - 6 - pktlen;
+			ret = Ts_Header(tsdata, 0, pid, 3, pcr, ret, (*cont)++);
+
+			//printf("--headerlen=%d, pktlen=%d--\n", ret, pktlen);
+			if(pktlen < 188 - 6)
+				memset(tsdata+ret, 0xff, 188-pktlen-ret);
+			memcpy(tsdata+188-pktlen, p, pktlen);
+
+			fwrite(tsdata, 188, 1, pfile);
+			break;
+		}
+	}
+
+	return 0;
+}
+
+int Ts_Header(char *buf, int startflag, int pid, int adaptflag, int64_t pcr, int stuflen, int cont)
+{
+	int adflag = 0;
+	char *p = buf;
+	*p++ = 0x47;
+	*p++ = (pid >> 8) & 0x1f;
+	if(startflag)
+		p[-1] |= 0x40;
+	*p++ = pid & 0xff;
+
+	switch(adaptflag){
+		case 1: adflag |= 0x01 << 4; break;
+		case 2: adflag |= 0x02 << 4; break;
+		case 3: adflag |= 0x03 << 4; break;
+		default : break;
+	}
+	//adflag |= cont & 0x0f;
+
+	adflag = (adflag & 0xf0) | (cont & 0x0f);
+
+	*p++ = adflag;
+
+	if(adaptflag == 1 && startflag){
+		*p++ = 0x00;
+	}
+
+	if(adaptflag > 1 && startflag){
+		if(pcr){
+			*p++ = 0x07;	//len
+			*p++ = 0x50;	//flag
+			p += write_pcr_bits(p, pcr);
+		} else {
+			*p++ = 0x01;
+			*p++ = 0x40;
+		}
+	}
+
+	if(adaptflag > 1 && !startflag){
+		*p++ = stuflen;
+		*p++ = 0x00;
+	}
+
+	return p - buf;
+}
+
+void Ts_Packet_Pmt(int pmt_pid, int video_pid, int audio_pid, char *buf)
+{
+	unsigned int crc;
+	char *p = buf;
+
+	p += Ts_Header(p, 1, pmt_pid, 1, 0, 0, 1);
+
+	*p++ = 0x02;
+	*p++ = 0xb0;
+	*p++ = 0x17;
+	*p++ = 0x00;
+	*p++ = 0x01;
+	*p++ = 0xc1;
+	*p++ = 0x00;
+	*p++ = 0x00;
+	*p++ = 0xe1;
+	*p++ = 0x00;
+	*p++ = 0xf0;
+	*p++ = 0x00;
+
+	*p++ = 0x1b;	//h264
+	*p++ = 0xe0 | ((video_pid >> 8) & 0x1f);
+	*p++ = video_pid & 0xff;
+	*p++ = 0xf0;
+	*p++ = 0x00;
+
+	*p++ = 0x0f;	//aac
+	*p++ = 0xe0 | ((audio_pid >> 8) & 0x1f);
+	*p++ = audio_pid & 0xff;
+	*p++ = 0xf0;
+	*p++ = 0x00;
+
+	//crc32
+	#if 0
+	crc = crc32(CRC_32_Table, -1, buf, p - buf);
+
+	*p++ = (crc >> 24) & 0xff;
+	*p++ = (crc >> 16) & 0xff;
+	*p++ = (crc >> 8) & 0xff;
+	*p++ = crc & 0xff;
+	#endif
+
+	*p++ = 0x2f;
+	*p++ = 0x44;
+	*p++ = 0xb9;
+	*p++ = 0x9b;
+	
+	if(p-buf < 188)
+		memset(p, 0xff, 188 - (p - buf));
+
+	return;
+}
+
+void Ts_Packet_Pat(int pat_pid, int pmt_pid, char *buf)
+{
+	unsigned int crc;
+	char *p = buf;
+
+	p += Ts_Header(p, 1, pat_pid, 1, 0, 0, 1);
+
+	*p++ = 0x00;	//pat table id
+	*p++ = 0xb0;
+	*p++ = 0x0d;	//lenght
+	*p++ = 0x00;
+	*p++ = 0x01;	//transport_stream_id
+	*p++ = 0xc1;
+	*p++ = 0x00;
+	*p++ = 0x00;
+
+	*p++ = 0x00;
+	*p++ = 0x01;	//program_number
+
+	//*p++ = 0xf0;	//pmt_id
+	//*p++ = 0x00;
+
+	*p++ = 0xe0 | ((pmt_pid >> 8) & 0x1f);
+	*p++ = pmt_pid & 0xff;
+
+	//crc32
+	#if 0
+	crc = crc32(CRC_32_Table, -1, buf, p - buf);
+
+	*p++ = (crc >> 24) & 0xff;
+	*p++ = (crc >> 16) & 0xff;
+	*p++ = (crc >> 8) & 0xff;
+	*p++ = crc & 0xff;
+	#endif
+
+	*p++ = 0x2a;
+	*p++ = 0xb1;
+	*p++ = 0x04;
+	*p++ = 0xb2;
+
+	if(p-buf < 188)
+		memset(p, 0xff, 188 - (p - buf));
+
+	return;
+}
+
+/*int avpriv_mpeg4audio_sample_rates[] = { 
+   96000, 88200, 64000, 48000, 44100, 32000, 
+   24000, 22050, 16000, 12000, 11025, 8000, 7350 
+}; 
+channel_configuration: 表示声道数chanCfg 
+0: Defined in AOT Specifc Config 
+1: 1 channel: front-center 
+2: 2 channels: front-left, front-right 
+3: 3 channels: front-center, front-left, front-right 
+4: 4 channels: front-center, front-left, front-right, back-center 
+5: 5 channels: front-center, front-left, front-right, back-left, back-right 
+6: 6 channels: front-center, front-left, front-right, back-left, back-right, LFE-channel 
+7: 8 channels: front-center, front-left, front-right, side-left, side-right, back-left, back-right, LFE-channel 
+8-15: Reserved 
+*/  
+
+
+
+int Pes_Packet_AV(RTMPPacket *packet, char *sps, int nsps, char *pps, int npps, char *buf, int key,
+	AudioSpecificConfig *aac)
+{
+	char *p = buf;
+	char *src;
+	int slen=0;
+	int64_t pts=0, dts=0;
+	uint32_t cts=0;
+
+	switch (packet->m_packetType)
+	{
+		case RTMP_PACKET_TYPE_AUDIO: {
+			if(((packet->m_body[0] >> 4) & 0x0f) == 0x0a){
+				src = packet->m_body + 2;
+				slen = packet->m_nBodySize - 2;
+			} else {
+				src = packet->m_body + 1;
+				slen = packet->m_nBodySize - 1;
+			}
+		}break;
+		case RTMP_PACKET_TYPE_VIDEO: {
+			if((packet->m_body[0] & 0x0f) == 0x07){
+				src = packet->m_body + 4 + 5;
+				slen = packet->m_nBodySize - 4 - 5;
+			} else {
+				src = packet->m_body + 1 + 5;
+				slen = packet->m_nBodySize - 1 - 5;
+			}
+		}break;
+		
+		default : break;
+	}
+
+	//pes start_code
+	*p++ = 0x00;
+	*p++ = 0x00;
+	*p++ = 0x01;
+
+	
+	//pes pts_dts_flag
+	//if(pts != 0 && dts != 0 && dts != pts){
+	if(packet->m_packetType == RTMP_PACKET_TYPE_VIDEO){
+
+		//pes stream_id
+		*p++ = 0xe0;
+
+		//pes packet_en
+		if(packet->m_nBodySize+3+10 > 0xffff){
+			*p++ = 0x00;
+			*p++ = 0x00;
+		} else {
+			*p++ = (packet->m_nBodySize+3+10) >> 8;
+			*p++ = packet->m_nBodySize+3+10;
+		}
+
+		//pes flag
+		*p++ = 0x80;
+
+		//pts dts
+		dts = (int64_t)packet->m_nTimeStamp * 90;
+		memcpy(&cts, packet->m_body+2, 3);
+		cts = ((cts & 0x00FF0000) >> 16) | ((cts & 0x000000FF) << 16) |
+	          (cts & 0x0000FF00);
+
+		pts = dts + cts * 90;
+		
+		*p++ = 0xc0;
+		//pes pts_dts_len
+		*p++ = 0x0a;
+
+		write_pts(p, 0x0c >> 6, pts);
+        p += 5;
+
+		write_pts(p, 1, dts);
+        p += 5;
+
+		if((packet->m_body[9] & 0x1f) == 0x06){
+			//NALU AUD
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x01;
+			*p++ = 0x09;
+			*p++ = 0xf0;
+
+		} else if((packet->m_body[9] & 0x1f) == 0x05) {
+			//NALU AUD
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x01;
+			*p++ = 0x09;
+			*p++ = 0xf0;
+
+			//sps
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x01;
+			memcpy(p, sps, nsps);
+			p += nsps;
+
+			//pps
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x00;
+			*p++ = 0x01;
+			memcpy(p, pps, npps);
+			p += npps;
+		}
+
+		//Nalu start_code
+		*p++ = 0x00;
+		*p++ = 0x00;
+		*p++ = 0x00;
+		*p++ = 0x01;
+	}else{
+		
+		//pes stream_id
+		*p++ = 0xc0;
+
+		pts = (int64_t)packet->m_nTimeStamp * 90;
+		
+		//pes packet_en
+		if(slen+3+5+7 > 0xffff){
+			*p++ = 0x00;
+			*p++ = 0x00;
+		} else {
+			*p++ = (slen+3+5+7) >> 8;
+			*p++ = (slen+3+5+7);
+		}
+
+		//pes flag
+		*p++ = 0x80;
+
+		*p++ = 0x80;
+		//pes pts_len
+		*p++ = 0x05;
+		
+		write_pts(p, 0x80 >> 6, pts);
+        p += 5;
+
+		p += adts_write_frame_header(p, aac->aac_profile, aac->sampling_frequency_index, 
+			aac->channel_configuration, slen);
+	}
+
+	memcpy(p, src, slen);
+	p += slen;
+
+	return p-buf;
+}
+
+void Parse_AacConfigration(AudioSpecificConfig *aacc, RTMPPacket *packet)
+{
+	aacc->aac_profile = ((packet->m_body[2] & 0xF8) >> 3) & 0x1f;
+	aacc->sampling_frequency_index = ((packet->m_body[2] & 0x07) << 1) | (packet->m_body[3] >> 7);
+	aacc->channel_configuration = (packet->m_body[3] >> 3) & 0x0F;
+	aacc->framelength_flag = (packet->m_body[3] >> 2) & 0x01;
+	aacc->depends_on_core_coder = (packet->m_body[3] >> 1) & 0x01;
+	aacc->extension_flag = packet->m_body[3] & 0x01;
+
+	return;
+}
+
+void Parse_AvcConfigration(Tag_Video_AvcC *avcc, RTMPPacket *packet)
+{
+	int i;
+	char hc, lc;
+	unsigned short num;
+	if(packet->m_body[0] != 0x17 || packet->m_body[1] != 0x00)
+		return;
+
+	i = 5;
+	avcc->configurationVersion = packet->m_body[i++];						//0x01
+	avcc->AVCProfileIndication = packet->m_body[i++];						//0x64
+	avcc->profile_compatibility = packet->m_body[i++];						//0x00
+	avcc->AVCLevelIndication = packet->m_body[i++];							//0x1e
+	//avcc->reserved_1 = p++;									
+	avcc->lengthSizeMinusOne = packet->m_body[i++];							//0xff
+	//avcc->reserved_2 = p++;									
+	avcc->numOfSequenceParameterSets = packet->m_body[i++];					//0xe1
+
+	//SPS
+	hc = packet->m_body[i++];												//0x00
+	lc = packet->m_body[i++];												//0x18
+	num = (hc << 8) | lc;
+	avcc->sequenceParameterSetLength = num;
+	avcc->sequenceParameterSetNALUnit = calloc(num, sizeof(char));
+	memcpy(avcc->sequenceParameterSetNALUnit, packet->m_body+i, num);		//
+	i += num;
+
+
+	//PPS
+	avcc->numOfPictureParameterSets = packet->m_body[i++];					//0x01
+	hc = packet->m_body[i++];												//0x00
+	lc = packet->m_body[i++];												//0x06
+	num = (hc << 8) | lc;
+	avcc->pictureParameterSetLength = num;
+	avcc->pictureParameterSetNALUnit = calloc(num, sizeof(char));
+	memcpy(avcc->pictureParameterSetNALUnit, packet->m_body+i, num);
+
+	return;
+}
+
 
 void RTMPPacket_Copy1(RTMPPacket *dst, RTMPPacket *src)
 {
@@ -3887,10 +4822,11 @@ int RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
 		packet->m_hasAbsTimestamp = TRUE;
 
 	else if (nSize < RTMP_LARGE_HEADER_SIZE)
-	{				/* using values from the last message of this channel */
+	{	/* using values from the last message of this channel */
+
+		//获取上次保存的数据包  get prev packet data
 		if (r->m_vecChannelsIn[packet->m_nChannel])
-			memcpy(packet, r->m_vecChannelsIn[packet->m_nChannel],
-			sizeof(RTMPPacket));
+			memcpy(packet, r->m_vecChannelsIn[packet->m_nChannel], sizeof(RTMPPacket));
 	}
 
 	nSize--;
@@ -3907,24 +4843,31 @@ int RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
 
 	if (nSize >= 3)
 	{
+		//timestamp (3byte)
 		packet->m_nTimeStamp = AMF_DecodeInt24(header);
 
 		/*RTMP_Log(RTMP_LOGDEBUG, "%s, reading RTMP packet chunk on channel %x, headersz %i, timestamp %i, abs timestamp %i", __FUNCTION__, packet.m_nChannel, nSize, packet.m_nTimeStamp, packet.m_hasAbsTimestamp); */
 
 		if (nSize >= 6)
 		{
+			//message length (3byte)
 			packet->m_nBodySize = AMF_DecodeInt24(header + 3);
 			packet->m_nBytesRead = 0;
 
 			if (nSize > 6)
 			{
+				//message type id (1byte)
 				packet->m_packetType = header[6];
 
+				//message stream id (4byte)
 				if (nSize == 11)
 					packet->m_nInfoField2 = DecodeInt32LE(header + 7);
 			}
 		}
 	}
+
+	//RTMP_Log(RTMP_LOGDEBUG, "%s, csid : %0x, pkt_type : %0x", 
+		//__FUNCTION__, packet->m_nChannel, packet->m_packetType);
 
 	//3. Extended Timestamp（扩展时间戳）
 	extendedTimestamp = packet->m_nTimeStamp == 0xffffff;
@@ -3951,7 +4894,6 @@ int RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
 		}
 		didAlloc = TRUE;
 		packet->m_headerType = (hbuf[0] & 0xc0) >> 6;
-
 	}
 
 	nToRead = packet->m_nBodySize - packet->m_nBytesRead;
@@ -3968,20 +4910,22 @@ int RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
 		packet->m_chunk->c_chunkSize = nChunk;
 	}
 
+	//追加到上一个包数据的后面  app data to prev packet data
 	if (ReadN(r, packet->m_body + packet->m_nBytesRead, nChunk) != nChunk)
 	{
 		RTMP_Log(RTMP_LOGERROR, "%s, failed to read RTMP packet body. len: %u",
 			__FUNCTION__, packet->m_nBodySize);
 		return FALSE;
 	}
-
 	
-
+	//累加总数据长度
 	packet->m_nBytesRead += nChunk;
 
 	/* keep the packet as ref for other packets on this channel */
 	if (!r->m_vecChannelsIn[packet->m_nChannel])
 		r->m_vecChannelsIn[packet->m_nChannel] = malloc(sizeof(RTMPPacket));
+
+	//保存当前总数据包 store current total packet data  
 	memcpy(r->m_vecChannelsIn[packet->m_nChannel], packet, sizeof(RTMPPacket));
 	if (extendedTimestamp)
 	{
@@ -4322,8 +5266,8 @@ int
 	return wrote;
 }
 
-int
-	RTMP_SendPacket(RTMP *r, RTMPPacket *packet, int queue)
+
+int RTMP_SendPacket(RTMP *r, RTMPPacket *packet, int queue)
 {
 	const RTMPPacket *prevPacket;
 	uint32_t last = 0;
@@ -4406,6 +5350,7 @@ int
 
 	hptr = header;
 	c = packet->m_headerType << 6;
+	
 	switch (cSize)
 	{
 	case 0:
@@ -4417,29 +5362,42 @@ int
 		c |= 1;
 		break;
 	}
+
+	// BasicHeader (1byte)
 	*hptr++ = c;
+	
 	if (cSize)
 	{
 		int tmp = packet->m_nChannel - 64;
+
+		// BasicHeader (2byte)
 		*hptr++ = tmp & 0xff;
+
+		// BasicHeader (3byte)
 		if (cSize == 2)
 			*hptr++ = tmp >> 8;
 	}
 
 	if (nSize > 1)
-	{
+	{	
+		// timestamp (3byte)
 		hptr = AMF_EncodeInt24(hptr, hend, t > 0xffffff ? 0xffffff : t);
 	}
 
 	if (nSize > 4)
-	{
+	{	
+		// message length (3byte)
 		hptr = AMF_EncodeInt24(hptr, hend, packet->m_nBodySize);
+
+		// message type id  (1byte)
 		*hptr++ = packet->m_packetType;
 	}
 
+	// message stream id  (4byte)
 	if (nSize > 8)
 		hptr += EncodeInt32LE(hptr, packet->m_nInfoField2);
 
+	// extern timestamp (4byte)
 	if (t >= 0xffffff)
 		hptr = AMF_EncodeInt32(hptr, hend, t);
 
@@ -4478,14 +5436,18 @@ int
 		}
 		else
 		{
+			// Send one chunk
 			wrote = WriteN(r, header, nChunkSize + hSize);
 			if (!wrote)
 				return FALSE;
 		}
-		nSize -= nChunkSize;
-		buffer += nChunkSize;
+		
+		nSize -= nChunkSize;	//包大小 减少 chunksize
+		buffer += nChunkSize;	//包数据后移 chunksize
 		hSize = 0;
 
+
+		//一个 Chunk 未发送完一个数据包的内容，剩下的数据 由 消息类型 fmt = 3 的 Chunk 发送
 		if (nSize > 0)
 		{
 			header = buffer - 1;
@@ -4500,7 +5462,9 @@ int
 				header -= 4;
 				hSize += 4;
 			}
-			*header = (0xc0 | c);
+
+			// Basic Header
+			*header = (0xc0 | c);		// 1 1 0 0 | 0 0 0 0   ===> fmt == 3
 			if (cSize)
 			{
 				int tmp = packet->m_nChannel - 64;
@@ -4508,6 +5472,8 @@ int
 				if (cSize == 2)
 					header[2] = tmp >> 8;
 			}
+
+			// extern timestamp
 			if (t >= 0xffffff)
 			{
 				char* extendedTimestamp = header + 1 + cSize;
@@ -4543,6 +5509,8 @@ int
 
 	if (!r->m_vecChannelsOut[packet->m_nChannel])
 		r->m_vecChannelsOut[packet->m_nChannel] = malloc(sizeof(RTMPPacket));
+
+	// 保存本次发送的包
 	memcpy(r->m_vecChannelsOut[packet->m_nChannel], packet, sizeof(RTMPPacket));
 	return TRUE;
 }
