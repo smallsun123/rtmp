@@ -309,7 +309,9 @@ static int rtmp_hls_append_aud(char *buf, int len)
     return p - buf;
 }
 
-#if 0
+/*
+	typedef struct adts_fixed_header
+*/
 static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int chancfg, int size){
 	char *p = buf;
 
@@ -323,8 +325,8 @@ static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int
 
 	return p - buf;
 }
-#endif
 
+#if 0
 static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int chancfg, int size){
 	char *p = buf;
 
@@ -338,6 +340,7 @@ static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int
 
 	return p - buf;
 }
+#endif
 
 
 static int rtmp_hls_append_sps_pps(char *buf, int len, char *sps, int nsps, char *pps, int npps)
@@ -397,7 +400,7 @@ int rtmp_mpegts_write_frame(RTMPPacket *pkt, int* cc, Tag_Video_AvcC* avc, Audio
 		}
 
 		//video tag  type|codeid  1byte
-		key = ((pkt->m_body[0] & 0xf0) >> 4) == 1;
+		key = ((pkt->m_body[0] & 0xf0) >> 4) == 1 ? 1 : 0;
 
 		//pts dts   Composition time offset   3byte
 		dts = (int64_t)pkt->m_nTimeStamp * 90;
@@ -1076,8 +1079,6 @@ int Pes_Packet_AV(RTMPPacket *packet, char *sps, int nsps, char *pps, int npps, 
 /*
 	AudioSpecificConfig :
 	AAC Profile 5bits | 采样率 4bits | 声道数 4bits | 其他 3bits |
-
-
 */
 
 void Parse_AacConfigration(AudioSpecificConfig *aacc, RTMPPacket *packet)

@@ -129,6 +129,104 @@ uint32_t RTMP_GetTime(void);
 #define RTMP_PACKET_SIZE_SMALL    2			// 3
 #define RTMP_PACKET_SIZE_MINIMUM  3			// 0
 
+
+
+// adts header
+#pragma pack(1)
+
+/*
+	1. syncword ：总是0xFFF, 代表一个ADTS帧的开始, 用于同步.
+	2. id：MPEG Version: 
+		0 for MPEG-4
+		1 for MPEG-2
+	3. layer：always: '00'
+	4. protection_absent：Warning
+		1 if there is no CRC 
+		0 if there is CRC
+	5. profile：表示使用哪个级别的AAC 
+		profile = aac_profile - 1;
+		-----------
+		0 | NULL
+		-----------
+		1 | AAC MAIN
+		-----------
+		2 | AAC LC
+		-----------
+		3 | AAC SSR
+		-----------
+		4 | AAC LTP
+		-----------
+	6. sampling_frequency_index：采样率的下标
+		-------------------------------------------
+		sampling_frequency_index | 	value
+		-------------------------------------------
+		0x00				 |	96000
+		-------------------------------------------
+		0x01				 | 	88200
+		-------------------------------------------
+		0x02				 | 	64000
+		-------------------------------------------
+		0x03				 | 	48000
+		-------------------------------------------
+		0x04				 | 	44100
+		-------------------------------------------
+		0x05				 | 	32000
+		-------------------------------------------
+		0x06				 | 	24000
+		-------------------------------------------
+		0x07				 | 	22050
+		-------------------------------------------
+		0x08				 | 	16000
+		-------------------------------------------
+		0x09				 | 	12000
+		-------------------------------------------
+		0x0a				 | 	11025
+		-------------------------------------------
+		0x0b				 | 	 8000
+		-------------------------------------------
+		0x0c				 | 	 7350
+		-------------------------------------------
+		0x0d				 | 	reversed
+		-------------------------------------------
+		0x0e				 | 	reversed
+		-------------------------------------------
+		0x0f				 | 	escape value
+		-------------------------------------------
+	7. channel_configuration：声道数，比如2表示立体声双声道
+*/
+
+typedef struct adts_fixed_header{
+	uint16_t syncword:12;
+	uint8_t id:1;
+	uint8_t layer:2;
+	uint8_t protection_absent:1;
+	uint8_t profile:2;
+	uint8_t sampling_frequency_index:4;
+	uint8_t private_bit:1;
+	uint8_t channel_configuration:3;
+	uint8_t original_copy:1;
+	uint8_t home:1;
+}adts_fixed_header;
+
+/*
+	1. aac_frame_length：一个ADTS帧的长度包括ADTS头和AAC原始流
+		aac_frame_length = (protection_absent == 1 ? 7 : 9) + size(AACFrame)
+	2. adts_buffer_fullness：0x7FF 说明是码率可变的码流
+	3. number_of_raw_data_blocks_in_frame：表示ADTS帧中有number_of_raw_data_blocks_in_frame + 1个AAC原始帧
+		number_of_raw_data_blocks_in_frame == 0 表示说ADTS帧中有一个AAC数据块
+		(一个AAC原始帧包含一段时间内1024个采样及相关数据)
+*/
+typedef struct adts_variable_header{
+	uint8_t copyright_identification_bit:1;
+	uint8_t copyright_identification_start:1;
+	uint16_t aac_frame_length:13;
+	uint16_t adts_buffer_fullness:11;
+	uint8_t number_of_raw_data_blocks_in_frame:2;
+}adts_variable_header;
+
+#pragma pack()
+
+
 /*
       17 00 00 00 00 01    64 00 1e ff e1 00 18 67
 64 00 1e ac d9 40 a0 3d    a1 00 00 03 00 01 00 00
