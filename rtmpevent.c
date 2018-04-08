@@ -1136,6 +1136,9 @@ static int ServePacket(APP *server, RTMP *r, RTMPPacket *packet)
 
 		//distribute_to_players(myapp, r, packet);
 
+		//printf("==================%d==================\n", packet->m_nBodySize);
+		//RTMP_LogHexString(RTMP_LOGERROR, (uint8_t *)packet->m_body, packet->m_nBodySize);
+
 		rtmp_mpegts_write_frame(packet, &publish->audiocount, &publish->avcc, &publish->aacc);
 
 		break;

@@ -309,6 +309,7 @@ static int rtmp_hls_append_aud(char *buf, int len)
     return p - buf;
 }
 
+#if 0
 static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int chancfg, int size){
 	char *p = buf;
 
@@ -322,6 +323,22 @@ static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int
 
 	return p - buf;
 }
+#endif
+
+static int adts_write_frame_header(char *buf, int profile, int samplefreidx, int chancfg, int size){
+	char *p = buf;
+
+	*p++ = (char) 0xFF;
+    *p++ = (char) 0xF9;
+    *p++ = (char) (((profile - 1) << 6) + (samplefreidx << 2) + (chancfg >> 2));
+    *p++ = (char) (((chancfg & 0x03) << 6) + (size >> 11));
+    *p++ = (char) ((size & 0x7FF) >> 3);
+    *p++ = (char) (((size & 0x07) << 5) + 0x1F);
+    *p++ = (char) 0xFC;
+
+	return p - buf;
+}
+
 
 static int rtmp_hls_append_sps_pps(char *buf, int len, char *sps, int nsps, char *pps, int npps)
 {
@@ -642,6 +659,7 @@ int rtmp_mpegts_write_frame(RTMPPacket *pkt, int* cc, Tag_Video_AvcC* avc, Audio
 
 		rc = fwrite(packet, 188, 1, pfile);
         if (rc < 0) {
+			printf("---hls: fwrite failed ret = %d\n", rc);
             return rc;
         }
     }
@@ -1054,14 +1072,27 @@ int Pes_Packet_AV(RTMPPacket *packet, char *sps, int nsps, char *pps, int npps, 
 	return p-buf;
 }
 
+
+/*
+	AudioSpecificConfig :
+	AAC Profile 5bits | 采样率 4bits | 声道数 4bits | 其他 3bits |
+
+
+*/
+
 void Parse_AacConfigration(AudioSpecificConfig *aacc, RTMPPacket *packet)
 {
 	aacc->aac_profile = ((packet->m_body[2] & 0xF8) >> 3) & 0x1f;
-	aacc->sampling_frequency_index = ((packet->m_body[2] & 0x07) << 1) | (packet->m_body[3] >> 7);
+	aacc->sampling_frequency_index = (((packet->m_body[2] & 0x07) << 1) | ((packet->m_body[3] >> 7) & 0x01)) & 0x0f;
 	aacc->channel_configuration = (packet->m_body[3] >> 3) & 0x0F;
 	aacc->framelength_flag = (packet->m_body[3] >> 2) & 0x01;
 	aacc->depends_on_core_coder = (packet->m_body[3] >> 1) & 0x01;
 	aacc->extension_flag = packet->m_body[3] & 0x01;
+
+	printf("profile = %d, sfreidx = %d, channelcfg = %d, framelength = %d, docc = %d, extern = %d\n",
+		aacc->aac_profile, aacc->sampling_frequency_index, 
+		aacc->channel_configuration, aacc->framelength_flag, 
+		aacc->depends_on_core_coder, aacc->extension_flag);
 
 	return;
 }
