@@ -1094,18 +1094,18 @@ static int ServePacket(APP *server, RTMP *r, RTMPPacket *packet)
 		HandleChangeChunkSize(r, packet);
 		break;
 
-	case RTMP_PACKET_TYPE_BYTES_READ_REPORT:
+	case RTMP_PACKET_TYPE_ACKNOWLEDGEMENT:
 		break;
 
 	case RTMP_PACKET_TYPE_CONTROL:
 		HandleCtrl(r, packet);
 		break;
 
-	case RTMP_PACKET_TYPE_SERVER_BW:
+	case RTMP_PACKET_TYPE_SET_WINDOW_ACK_SIZE:
 		HandleServerBW(r, packet);
 		break;
 
-	case RTMP_PACKET_TYPE_CLIENT_BW:
+	case RTMP_PACKET_TYPE_SET_PEER_BW:
 		HandleClientBW(r, packet);
 		break;
 

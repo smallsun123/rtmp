@@ -2347,7 +2347,7 @@ int
 		HandleChangeChunkSize(r, packet);
 		break;
 
-	case RTMP_PACKET_TYPE_BYTES_READ_REPORT:
+	case RTMP_PACKET_TYPE_ACKNOWLEDGEMENT:
 		/* bytes read report */
 		RTMP_Log(RTMP_LOGDEBUG, "%s, received: bytes read report", __FUNCTION__);
 		break;
@@ -2357,12 +2357,12 @@ int
 		HandleCtrl(r, packet);
 		break;
 
-	case RTMP_PACKET_TYPE_SERVER_BW:
+	case RTMP_PACKET_TYPE_SET_WINDOW_ACK_SIZE:
 		/* server bw */
 		HandleServerBW(r, packet);
 		break;
 
-	case RTMP_PACKET_TYPE_CLIENT_BW:
+	case RTMP_PACKET_TYPE_SET_PEER_BW:
 		/* client bw */
 		HandleClientBW(r, packet);
 		break;
@@ -3156,7 +3156,7 @@ int
 
 	packet.m_nChannel = 0x02;	/* control channel (invoke) */
 	packet.m_headerType = RTMP_PACKET_SIZE_LARGE;
-	packet.m_packetType = RTMP_PACKET_TYPE_SERVER_BW;
+	packet.m_packetType = RTMP_PACKET_TYPE_SET_WINDOW_ACK_SIZE;
 	packet.m_nTimeStamp = 0;
 	packet.m_nInfoField2 = 0;
 	packet.m_hasAbsTimestamp = 0;
@@ -3176,7 +3176,7 @@ int
 
 	packet.m_nChannel = 0x02;	/* control channel (invoke) */
 	packet.m_headerType = RTMP_PACKET_SIZE_LARGE;
-	packet.m_packetType = RTMP_PACKET_TYPE_CLIENT_BW;
+	packet.m_packetType = RTMP_PACKET_TYPE_SET_PEER_BW;
 	packet.m_nTimeStamp = 0;
 	packet.m_nInfoField2 = 0;
 	packet.m_hasAbsTimestamp = 0;
@@ -3197,7 +3197,7 @@ static int
 
 	packet.m_nChannel = 0x02;	/* control channel (invoke) */
 	packet.m_headerType = RTMP_PACKET_SIZE_MEDIUM;
-	packet.m_packetType = RTMP_PACKET_TYPE_BYTES_READ_REPORT;
+	packet.m_packetType = RTMP_PACKET_TYPE_ACKNOWLEDGEMENT;
 	packet.m_nTimeStamp = 0;
 	packet.m_nInfoField2 = 0;
 	packet.m_hasAbsTimestamp = 0;
@@ -4967,6 +4967,11 @@ int RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
 	if (RTMPPacket_IsReady(packet))
 	{
 		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)packet->m_body, packet->m_nBodySize);
+
+		RTMP_Log(RTMP_LOGDEBUG, 
+        "fmt=%d,csid=%d,mtime=%lld,mlen=%d,mtype=%02x,msid=%d,prev_time=%lld\n",
+        packet->m_headerType,packet->m_nChannel,packet->m_nTimeStamp,packet->m_nBodySize,
+        packet->m_packetType,packet->m_nInfoField2, r->m_channelTimestamp[packet->m_nChannel]);
 	
 		/* make packet's timestamp absolute */
 		if (!packet->m_hasAbsTimestamp)

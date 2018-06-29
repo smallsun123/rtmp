@@ -98,13 +98,182 @@ extern int RTMP_ctrlC;
 
 uint32_t RTMP_GetTime(void);
 
-	/*      RTMP_PACKET_TYPE_...                0x00 */
+/*      RTMP_PACKET_TYPE_...                0x00 */
+
+/*
+    1.小端法(Little-Endian)就是低位字节排放在内存的低地址端(即该值的起始地址),高位字节排放在内存的高地址端;
+    2.大端法(Big-Endian)就是高位字节排放在内存的低地址端(即该值的起始地址),低位字节排放在内存的高地址端;
+*/
+/*
+    1.RTMP 所有的 [ 整型字段 ] 都使用 [ 网络字节序 ] 传输, [ 大端模式 ]
+    2.RTMP 所有数据都是 [ 字节对齐 ]
+    3.RTMP 时间戳单位 [ 毫秒 ] 2^32=4294967296(ms), 49天，17小时，2分钟，47.296秒
+*/
+/*
+    序列号算法[RFC1982]
+    1.加法
+        sum = (s + n) % 2^32
+    2.比较
+        if{( a < b && b - a < 2^(32-1) ) || ( a > b && a - b > 2^(32-1) )} ===> a < b
+        -----------------------------
+        if{( a < b && b - a > 2^(32-1) ) || ( a > b && a - b < 2^(32-1) )} ===> a > b
+                                        --------------------------
+*/
+/*
+    
+    1. csid(chunk_stream_ID) : chunk流ID, 同一路流中的 (csid) 按消息类型分类
+        1)协议控制消息 csid==3 (connect/releaseStream/FCPublish/createStream/FCUnpublish/deleteStream) csid==8 (publish)
+        2)视频消息 csid==6
+        3)音频消息 csid==4
+        
+    2. msid(message_stream_ID) : 消息流ID, 同一路流中的所有 (msid==3) 都相同, 除了控制消息(协议控制消息, 用户控制消息, msid==0)
+        1)控制消息 msid==0
+        2)其他消息 msid==3
+
+    3. timestamp : 消息时间戳
+        1)控制消息 timestampe==0
+        2)音视频消息 timestampe 是相对于上一个同类型包时间戳的 [[增量]] (timestampe == cur_pkt_timestamp - prev_pkt_timestamp)
+    
+*/
+/*
+    RTMP chunk流 协议层
+        协议控制信息(Protocol Control Message)  msid=0, csid=2
+            0x01 --- Set Chunk Size
+            0x02 --- Abort Message
+            0x03 --- ACK
+            0x05 --- Window Acknowledgement Size
+            0x06 --- Set Peer Bandwidth
+            
+    RTMP 协议层
+        用户控制消息(User Control Message) mtype=[0x04] <event_type, event_data> msid=0, csid=2
+            0 --- Stream Begin 
+            1 --- Stream EOF
+            2 --- StreamDry
+            3 --- SetBufferLength
+            4 --- StreamIsRecorded
+            6 --- PingRequest
+            7 --- PingResponse
+                
+        数据消息(Data Message)          mtype=[0x0f(AMF3), 0x12(AMF0)] (MetaData), time=0
+            onMetaData
+            
+        共享消息(Shared Object Message) [0x10(AMF3), 0x13(AMF0)]
+
+        命令消息(Command Message)       mtype=[0x11(AMF3), 0x14(AMF0)]    fmt=0/1, csid=3, msid=0, time=0
+        
+            网络连接命令(NetConnection Commands)
+                connect/call/close
+            网络流命令(NetStream Commands)
+                createStream/deleteStream/closeStream/play/play2/publish/seek/pause/receiveAudio/receiveVideo
+                releaseStream/FCPublish/getStreamLength/onStatus
+            
+        音视频消息(Audio/Video Message) mtype=[0x08(audio), 0x09(video)]
+            
+        聚集消息(Aggregate Message) mtype=[0x16]
+            Aggregate_Message_Format:
+            +--------+------------------------+
+            | Header | Aggregate Message Body |
+            +--------+------------------------+
+            Aggregate_Message_Body:
+            +---------+-------------------------------+-----------------------------------------+- - - - - -
+            | Header0 | Message_Data0 | Back_Pointer0 | Header1 | Message_Data1 | Back_Pointer1 | 
+            +---------+-------------------------------+-----------------------------------------+- - - - - -
+            集合消息的消息流ID覆盖此消息内的子消息流的ID。
+
+            集合消息和第一个子消息的时间戳之间的偏移量,用来将子消息的时间戳处理为流的时间刻度.
+            每个子消息的时间戳可以通过添加偏移量来处理为正常的流时间.第一个子消息的时间戳
+            应该和集合消息的时间戳相同,因此偏移量应该为零.
+
+            反向指针包含了以前的消息(包含头信息)的大小.集合消息包含此字段,
+            一是为了适配FLV文件格式,二是为了回放定位。
+
+            使用集合消息有如下几个优势:
+
+            块流在一个块内至多可以携带一条完整的消息.使用集合消息之后,不仅可以增加块大小,
+            同时还减少了发送的块数量.
+
+            集合消息的子消息可以连续的存储在内存中.当系统调用网络发送数据时更高效.
+*/
+
+//Set Chunk Size 设置ChunkSize消息 默认为128byte
 #define RTMP_PACKET_TYPE_CHUNK_SIZE         0x01
-	/*      RTMP_PACKET_TYPE_...                0x02 */
-#define RTMP_PACKET_TYPE_BYTES_READ_REPORT  0x03
+/*
+    Set Chunk Size(Message Type ID=1)
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |0|                        chunk size (31 bits)                 |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+*/
+
+//Abort Message 丢弃消息
+#define RTMP_PACKET_TYPE_ABORT              0x02
+/*
+    Abort Message(Message Type ID=2)
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |           CSID      chunk stream id (32 bits)                 |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    chunk stream ID（32位）：这个字段保存了当前将被丢弃消息的chunk stream ID
+*/
+
+
+//Acknowledgement ACK消息
+#define RTMP_PACKET_TYPE_ACKNOWLEDGEMENT  0x03
+/*
+    Acknowledgement(Message Type ID=3)
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |                    sequence number  (32 bits)                 |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    sequence number（32个字节）：这个字段保存到目前为止接收到的字节数
+*/
+
+
+//User Control Message 用户控制消息 / 用户控制协议
 #define RTMP_PACKET_TYPE_CONTROL            0x04
-#define RTMP_PACKET_TYPE_SERVER_BW          0x05
-#define RTMP_PACKET_TYPE_CLIENT_BW          0x06
+/*
+    User Control Message(Message Type ID=4)
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |      event type (16 bits)     |     event data (var bits)  ----
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    event_type:(2bytes), event_data:(可变长数据)
+*/
+
+
+
+//Window Acknowledgement Size 设置窗口确认大小消息
+#define RTMP_PACKET_TYPE_SET_WINDOW_ACK_SIZE 0x05
+/*
+    Window Acknowledgement Size(Message Type ID=5)
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |            Acknowledgement Window Size (32 bits)              |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    Acknowledgement Window Size（32个字节）：窗口大小
+*/
+
+
+//Set Peer Bandwidth 设置对端带宽
+#define RTMP_PACKET_TYPE_SET_PEER_BW        0x06
+/*
+    Set Peer Bandwidth(Message Type ID=6)
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |            Acknowledgement Window Size (32 bits)              |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |  Limit  Type  |
+    +-+-+-+-+-+-+-+-+
+    Acknowledgement Window Size（32个字节）：窗口大小
+
+    1)Hard(Limit Type==0):接受端应该将Window Ack Size 设为消息中的值
+    2)Soft(Limit Type==1):接受端可以讲Window Ack Size 设为消息中的值,
+                              也可以保存原来的值 (前提是原来的Size小于该控制消息中的 Window Ack Size)
+    3)Dynamic(Limit Type=2):如果上次的Set Peer Bandwidth消息中的(Limit Type==0),本次也按Hard处理,
+                                否则忽略本消息，不去设置Window Ack Size
+*/
+
 	/*      RTMP_PACKET_TYPE_...                0x07 */
 #define RTMP_PACKET_TYPE_AUDIO              0x08
 #define RTMP_PACKET_TYPE_VIDEO              0x09

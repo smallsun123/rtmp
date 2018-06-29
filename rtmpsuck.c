@@ -466,7 +466,7 @@ ServePacket(STREAMING_SERVER *server, int which, RTMPPacket *packet)
 //      HandleChangeChunkSize(r, packet);
       break;
 
-    case RTMP_PACKET_TYPE_BYTES_READ_REPORT:
+    case RTMP_PACKET_TYPE_ACKNOWLEDGEMENT:
       // bytes read report
       break;
 
@@ -475,12 +475,12 @@ ServePacket(STREAMING_SERVER *server, int which, RTMPPacket *packet)
 //      HandleCtrl(r, packet);
       break;
 
-    case RTMP_PACKET_TYPE_SERVER_BW:
+    case RTMP_PACKET_TYPE_SET_WINDOW_ACK_SIZE:
       // server bw
 //      HandleServerBW(r, packet);
       break;
 
-    case RTMP_PACKET_TYPE_CLIENT_BW:
+    case RTMP_PACKET_TYPE_SET_PEER_BW:
       // client bw
  //     HandleClientBW(r, packet);
       break;
@@ -851,7 +851,7 @@ TFTYPE doServe(void *arg)	// server socket and state (our listening socket)
                       }
                   }
                 /* bytes received */
-                else if (ps.m_packetType == RTMP_PACKET_TYPE_BYTES_READ_REPORT)
+                else if (ps.m_packetType == RTMP_PACKET_TYPE_ACKNOWLEDGEMENT)
                   {
                     if (ps.m_nBodySize >= 4)
                       {
