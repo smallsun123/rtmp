@@ -5316,6 +5316,7 @@ int RTMP_SendPacket(RTMP *r, RTMPPacket *packet, int queue)
 	int nChunkSize;
 	int tlen;
 
+
 	if (packet->m_nChannel >= r->m_channelsAllocatedOut)
 	{
 		int n = packet->m_nChannel + 10;
@@ -5330,6 +5331,14 @@ int RTMP_SendPacket(RTMP *r, RTMPPacket *packet, int queue)
 		memset(r->m_vecChannelsOut + r->m_channelsAllocatedOut, 0, sizeof(RTMPPacket*) * (n - r->m_channelsAllocatedOut));
 		r->m_channelsAllocatedOut = n;
 	}
+
+
+	RTMP_Log(RTMP_LOGINFO, 
+        "Send ==> fmt=%d,csid=%d,time=%lld,mlen=%d,mtype=%02x,msid=%d\n",
+        packet->m_headerType,packet->m_nChannel,packet->m_nTimeStamp,packet->m_nBodySize,
+        packet->m_packetType,packet->m_nInfoField2);
+
+	RTMP_LogHexString(RTMP_LOGINFO, (uint8_t *)packet->m_body, packet->m_nBodySize);
 
 	prevPacket = r->m_vecChannelsOut[packet->m_nChannel];
 	if (prevPacket && packet->m_headerType != RTMP_PACKET_SIZE_LARGE)

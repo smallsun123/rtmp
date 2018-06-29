@@ -98,6 +98,73 @@ extern int RTMP_ctrlC;
 
 uint32_t RTMP_GetTime(void);
 
+/*
+    play
+    -----------------------------------------------------------------------------------------------------------------------
+    server                                          client
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <-----  Connect         [csid=3,time=0,mtype=0x14,msid=0] 
+    -----------------------------------------------------------------------------------------------------------------------
+    Window_ack_size [csid=2,time=0,mtype=0x05,msid=0]  ----->
+    Set_peer_BW     [csid=2,time=0,mtype=0x06,msid=0]  ----->
+    Set_chunksize   [csid=2,time=0,mtype=0x01,msid=0]  ----->
+    _result         [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetConnection.Connect.Success)
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <-----  Window_ack_size [csid=2,time=0,mtype=0x05,msid=0]
+                                                    <-----  SetBufferLength [csid=2,time=0,mtype=0x04,msid=0] (streamid, buffersize)
+                                                    <-----  CreateStream    [csid=3,time=0,mtype=0x14,msid=0]
+    -----------------------------------------------------------------------------------------------------------------------
+    _result         [csid=3,time=0,mtype=0x14,msid=0]  -----> (streamid=1) (NetStream.Play.Stop)
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <-----  Play            [csid=8,time=0,mtype=0x14,msid=1]
+                                                    <-----  SetBufferLength [csid=2,time=0,mtype=0x04,msid=0] (streamid=1, buffersize)
+    -----------------------------------------------------------------------------------------------------------------------
+    Stream_Begin    [csid=2,time=0,mtype=0x04,msid=0]  -----> (streamid=1)
+    onStatus        [csid=5,time=0,mtype=0x14,msid=1]  -----> (NetStream.Play.Start)
+    RtmpSampleAccess[csid=5,time=0,mtype=0x12,msid=1]  -----> ()
+    onMetaData      [csid=5,time=0,mtype=0x12,msid=1]  -----> (onMetaData)
+    video           [csid=7,time=35,mtype=0x09,msid=1] -----> (videodata)
+    audio           [csid=6,time=21,mtype=0x08,msid=1] -----> (audioodata)
+    ...
+    ...
+    -----------------------------------------------------------------------------------------------------------------------
+*/
+
+/*
+    publish
+    -----------------------------------------------------------------------------------------------------------------------
+    server                                              client
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <---- connect       [csid=3,time=0,mtype=0x14,msid=0]
+    -----------------------------------------------------------------------------------------------------------------------
+    _result     [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetConnection.Connect.Success)
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <---- releaseStream [csid=3,time=0,mtype=0x14,msid=0] (streamid=1)
+    -----------------------------------------------------------------------------------------------------------------------
+    _result     [csid=3,time=0,mtype=0x14,msid=0]  ----->
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <---- FCPublish     [csid=3,time=0,mtype=0x14,msid=0] (streamid=1)
+    -----------------------------------------------------------------------------------------------------------------------
+    _result     [csid=3,time=0,mtype=0x14,msid=0]  ----->
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <---- createStream  [csid=3,time=0,mtype=0x14,msid=0]
+    -----------------------------------------------------------------------------------------------------------------------
+    _result     [csid=3,time=0,mtype=0x14,msid=0]  -----> (streamid=1)
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <---- publish       [csid=8,time=0,mtype=0x14,msid=3] (streamid=1)
+    -----------------------------------------------------------------------------------------------------------------------
+    onStatus    [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetStream.Publish.Start)
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <---- onMetaData    [csid=4,time=0,mtype=0x12,msid=3] 
+                                                    <---- video         [csid=6,time=35,mtype=0x09,msid=3]
+                                                    <---- audio         [csid=4,time=21,mtype=0x08,msid=3]
+                                                    ...
+                                                    ...
+                                                    <---- FCUnpublish   [csid=3,time=0,mtype=0x14,msid=0]
+                                                    <---- deleteStream  [csid=3,time=0,mtype=0x14,msid=0]
+    -----------------------------------------------------------------------------------------------------------------------
+*/
+
 /*      RTMP_PACKET_TYPE_...                0x00 */
 
 /*
@@ -105,7 +172,7 @@ uint32_t RTMP_GetTime(void);
     2.大端法(Big-Endian)就是高位字节排放在内存的低地址端(即该值的起始地址),低位字节排放在内存的高地址端;
 */
 /*
-    1.RTMP 所有的 [ 整型字段 ] 都使用 [ 网络字节序 ] 传输, [ 大端模式 ]
+    1.RTMP 所有的 [ 整型字段 ] 都使用 [ 网络字节序 ] 传输, [ 大端模式 ], 除了 [ message_stream_ID 小端字节序]
     2.RTMP 所有数据都是 [ 字节对齐 ]
     3.RTMP 时间戳单位 [ 毫秒 ] 2^32=4294967296(ms), 49天，17小时，2分钟，47.296秒
 */
@@ -136,7 +203,7 @@ uint32_t RTMP_GetTime(void);
     
 */
 /*
-    RTMP chunk流 协议层
+    1.RTMP chunk流 协议层
         协议控制信息(Protocol Control Message)  msid=0, csid=2
             0x01 --- Set Chunk Size
             0x02 --- Abort Message
@@ -144,8 +211,8 @@ uint32_t RTMP_GetTime(void);
             0x05 --- Window Acknowledgement Size
             0x06 --- Set Peer Bandwidth
             
-    RTMP 协议层
-        用户控制消息(User Control Message) mtype=[0x04] <event_type, event_data> msid=0, csid=2
+    2.RTMP 协议层
+        1)用户控制消息(User Control Message) mtype=[0x04] <event_type, event_data> msid=0, csid=2
             0 --- Stream Begin 
             1 --- Stream EOF
             2 --- StreamDry
@@ -154,12 +221,12 @@ uint32_t RTMP_GetTime(void);
             6 --- PingRequest
             7 --- PingResponse
                 
-        数据消息(Data Message)          mtype=[0x0f(AMF3), 0x12(AMF0)] (MetaData), time=0
+        2)数据消息(Data Message)          mtype=[0x0f(AMF3), 0x12(AMF0)] (MetaData), time=0
             onMetaData
             
-        共享消息(Shared Object Message) [0x10(AMF3), 0x13(AMF0)]
+        3)共享消息(Shared Object Message) [0x10(AMF3), 0x13(AMF0)]
 
-        命令消息(Command Message)       mtype=[0x11(AMF3), 0x14(AMF0)]    fmt=0/1, csid=3, msid=0, time=0
+        4)命令消息(Command Message)       mtype=[0x11(AMF3), 0x14(AMF0)]    fmt=0/1, csid=3, msid=0, time=0
         
             网络连接命令(NetConnection Commands)
                 connect/call/close
@@ -167,9 +234,9 @@ uint32_t RTMP_GetTime(void);
                 createStream/deleteStream/closeStream/play/play2/publish/seek/pause/receiveAudio/receiveVideo
                 releaseStream/FCPublish/getStreamLength/onStatus
             
-        音视频消息(Audio/Video Message) mtype=[0x08(audio), 0x09(video)]
+        5)音视频消息(Audio/Video Message) mtype=[0x08(audio), 0x09(video)]
             
-        聚集消息(Aggregate Message) mtype=[0x16]
+        6)聚集消息(Aggregate Message) mtype=[0x16]
             Aggregate_Message_Format:
             +--------+------------------------+
             | Header | Aggregate Message Body |
@@ -742,6 +809,9 @@ int RTMP_SendCreateStream(RTMP *r);
 int RTMP_SendSeek(RTMP *r, int dTime);
 int RTMP_SendServerBW(RTMP *r);
 int RTMP_SendClientBW(RTMP *r);
+
+int RTMP_Send_Set_ChunkSize(RTMP *r);
+
 void RTMP_DropRequest(RTMP *r, int i, int freeit);
 int RTMP_Read(RTMP *r, char *buf, int size);
 int RTMP_Write(RTMP *r, const char *buf, int size);

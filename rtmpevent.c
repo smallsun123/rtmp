@@ -430,9 +430,11 @@ HandleCtrl(RTMP *r, const RTMPPacket *packet)
 	unsigned int tmp;
 	if (packet->m_body && packet->m_nBodySize >= 2)
 		nType = AMF_DecodeInt16(packet->m_body);
+
 	RTMP_Log(RTMP_LOGDEBUG, "%s, received ctrl. type: %d, len: %d", __FUNCTION__, nType,
 		packet->m_nBodySize);
-	/*RTMP_LogHex(packet.m_body, packet.m_nBodySize); */
+
+	RTMP_LogHex(RTMP_LOGDEBUG2, packet->m_body, packet->m_nBodySize);
 
 	if (packet->m_nBodySize >= 6)
 	{
