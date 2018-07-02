@@ -99,32 +99,43 @@ extern int RTMP_ctrlC;
 uint32_t RTMP_GetTime(void);
 
 /*
+    AMF 消息体格式
+    1. 消息命令字符串 (String)[type=0x02,lenght=len,value=val] (type=0x02,length=0x07,val="connect")
+    2. AMF消息序列号 (Number) [type=0x00,val=1] (客户端seq 递增),(服务端 _result.seq=客户端最后一个seq, onStatus.seq=0)
+    3. Object (Object) [type=0x03,val=[[name,val]]]
+        1) name [type=ox02, length=len, val=val]
+        2) val [String, Number, Object]
+    4. String/Number
+*/
+
+/*
     play
     -----------------------------------------------------------------------------------------------------------------------
-    server                                          client
+    server                                                  client
     -----------------------------------------------------------------------------------------------------------------------
-                                                    <-----  Connect         [csid=3,time=0,mtype=0x14,msid=0] 
+                                                    <-----  [Connect        ] [csid=3,time=0,mtype=0x14,msid=0] 
     -----------------------------------------------------------------------------------------------------------------------
-    Window_ack_size [csid=2,time=0,mtype=0x05,msid=0]  ----->
-    Set_peer_BW     [csid=2,time=0,mtype=0x06,msid=0]  ----->
-    Set_chunksize   [csid=2,time=0,mtype=0x01,msid=0]  ----->
-    _result         [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetConnection.Connect.Success)
+    [Window_ack_size] [csid=2,time=0,mtype=0x05,msid=0]  ----->
+    [Set_peer_BW    ] [csid=2,time=0,mtype=0x06,msid=0]  ----->
+    [Set_chunksize  ] [csid=2,time=0,mtype=0x01,msid=0]  ----->
+    [_result        ] [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetConnection.Connect.Success)
     -----------------------------------------------------------------------------------------------------------------------
-                                                    <-----  Window_ack_size [csid=2,time=0,mtype=0x05,msid=0]
-                                                    <-----  SetBufferLength [csid=2,time=0,mtype=0x04,msid=0] (streamid, buffersize)
-                                                    <-----  CreateStream    [csid=3,time=0,mtype=0x14,msid=0]
+                                                    <-----  [Window_ack_size] [csid=2,time=0,mtype=0x05,msid=0]
+                                                    <-----  [CreateStream   ] [csid=3,time=0,mtype=0x14,msid=0]
     -----------------------------------------------------------------------------------------------------------------------
-    _result         [csid=3,time=0,mtype=0x14,msid=0]  -----> (streamid=1) (NetStream.Play.Stop)
+    [_result        ] [csid=3,time=0,mtype=0x14,msid=0]  -----> (streamid=1) (NetStream.Play.Stop)
     -----------------------------------------------------------------------------------------------------------------------
-                                                    <-----  Play            [csid=8,time=0,mtype=0x14,msid=1]
-                                                    <-----  SetBufferLength [csid=2,time=0,mtype=0x04,msid=0] (streamid=1, buffersize)
+                                                    <-----  [getStreamLength] [csid=8,time=0,mtype=0x14,msid=0]
+                                                    <-----  [Play           ] [csid=8,time=0,mtype=0x14,msid=1]
+                                                    <-----  [SetBufferLength] [csid=2,time=0,mtype=0x04,msid=0] (streamid=1, buffersize)
     -----------------------------------------------------------------------------------------------------------------------
-    Stream_Begin    [csid=2,time=0,mtype=0x04,msid=0]  -----> (streamid=1)
-    onStatus        [csid=5,time=0,mtype=0x14,msid=1]  -----> (NetStream.Play.Start)
-    RtmpSampleAccess[csid=5,time=0,mtype=0x12,msid=1]  -----> ()
-    onMetaData      [csid=5,time=0,mtype=0x12,msid=1]  -----> (onMetaData)
-    video           [csid=7,time=35,mtype=0x09,msid=1] -----> (videodata)
-    audio           [csid=6,time=21,mtype=0x08,msid=1] -----> (audioodata)
+    [Stream_Begin   ] [csid=2,time=0,mtype=0x04,msid=0]  -----> (streamid=1)
+    [onStatus       ] [csid=5,time=0,mtype=0x14,msid=1]  -----> (NetStream.Play.Start)
+    -----------------------------------------------------------------------------------------------------------------------
+    [|RtmpSampleAccess][csid=5,time=0,mtype=0x12,msid=1]  -----> (string:|RtmpSampleAccess,Boolen:true,Boolen:true)
+    [onMetaData     ] [csid=5,time=0,mtype=0x12,msid=1]  -----> (onMetaData)
+    [video          ] [csid=7,time=35,mtype=0x09,msid=1] -----> (videodata)
+    [audio          ] [csid=6,time=21,mtype=0x08,msid=1] -----> (audioodata)
     ...
     ...
     -----------------------------------------------------------------------------------------------------------------------
@@ -135,33 +146,35 @@ uint32_t RTMP_GetTime(void);
     -----------------------------------------------------------------------------------------------------------------------
     server                                              client
     -----------------------------------------------------------------------------------------------------------------------
-                                                    <---- connect       [csid=3,time=0,mtype=0x14,msid=0]
+                                                    <---- [connect      ] [csid=3,time=0,mtype=0x14,msid=0]
     -----------------------------------------------------------------------------------------------------------------------
-    _result     [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetConnection.Connect.Success)
+    [Window_ack_size] [csid=2,time=0,mtype=0x05,msid=0]  -----> (5000000)
+    [Set_peer_BW    ] [csid=2,time=0,mtype=0x06,msid=0]  -----> (5000000)
+    [Set_chunksize  ] [csid=2,time=0,mtype=0x01,msid=0]  -----> (4096)
+    [_result        ] [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetConnection.Connect.Success)
     -----------------------------------------------------------------------------------------------------------------------
-                                                    <---- releaseStream [csid=3,time=0,mtype=0x14,msid=0] (streamid=1)
+                                                    <---- [Set_chunksize] [csid=2,time=0,mtype=0x01,msid=0] (4096)
+                                                    <---- [releaseStream] [csid=3,time=0,mtype=0x14,msid=0] (streamid=1)
+                                                    <---- [FCPublish    ] [csid=3,time=0,mtype=0x14,msid=0] (streamid=1)
+                                                    <---- [createStream ] [csid=3,time=0,mtype=0x14,msid=0]
     -----------------------------------------------------------------------------------------------------------------------
-    _result     [csid=3,time=0,mtype=0x14,msid=0]  ----->
+    [_result        ] [csid=3,time=0,mtype=0x14,msid=0]  -----> (streamid=1)
     -----------------------------------------------------------------------------------------------------------------------
-                                                    <---- FCPublish     [csid=3,time=0,mtype=0x14,msid=0] (streamid=1)
+                                                    <---- [publish      ] [csid=8,time=0,mtype=0x14,msid=3] (streamid=1)
     -----------------------------------------------------------------------------------------------------------------------
-    _result     [csid=3,time=0,mtype=0x14,msid=0]  ----->
+    [onStatus       ] [csid=5,time=0,mtype=0x14,msid=0]  -----> (NetStream.Publish.Start)/(NetStream.Publish.BadName)
     -----------------------------------------------------------------------------------------------------------------------
-                                                    <---- createStream  [csid=3,time=0,mtype=0x14,msid=0]
-    -----------------------------------------------------------------------------------------------------------------------
-    _result     [csid=3,time=0,mtype=0x14,msid=0]  -----> (streamid=1)
-    -----------------------------------------------------------------------------------------------------------------------
-                                                    <---- publish       [csid=8,time=0,mtype=0x14,msid=3] (streamid=1)
-    -----------------------------------------------------------------------------------------------------------------------
-    onStatus    [csid=3,time=0,mtype=0x14,msid=0]  -----> (NetStream.Publish.Start)
-    -----------------------------------------------------------------------------------------------------------------------
-                                                    <---- onMetaData    [csid=4,time=0,mtype=0x12,msid=3] 
-                                                    <---- video         [csid=6,time=35,mtype=0x09,msid=3]
-                                                    <---- audio         [csid=4,time=21,mtype=0x08,msid=3]
+                                                          [@setDataFrame] (onMetaData)
+                                                    <---- [onMetaData   ] [csid=4,time=0,mtype=0x12,msid=3] 
+                                                    <---- [video        ] [csid=6,time=35,mtype=0x09,msid=3]
+                                                    <---- [audio        ] [csid=4,time=21,mtype=0x08,msid=3]
                                                     ...
                                                     ...
-                                                    <---- FCUnpublish   [csid=3,time=0,mtype=0x14,msid=0]
-                                                    <---- deleteStream  [csid=3,time=0,mtype=0x14,msid=0]
+    -----------------------------------------------------------------------------------------------------------------------
+                                                    <---- [FCUnpublish  ] [csid=3,time=0,mtype=0x14,msid=0]
+                                                    <---- [deleteStream ] [csid=3,time=0,mtype=0x14,msid=0]
+    -----------------------------------------------------------------------------------------------------------------------
+    [onStatus       ] [csid=5,time=0,mtype=0x14,msid=0]  -----> (NetStream.Unpublish.Success)
     -----------------------------------------------------------------------------------------------------------------------
 */
 
@@ -377,7 +390,7 @@ uint32_t RTMP_GetTime(void);
 		1 for MPEG-2
 	3. layer：always: '00'
 	4. protection_absent：Warning
-		1 if there is no CRC 
+		1 if there is no CRC
 		0 if there is CRC
 	5. profile：表示使用哪个级别的AAC 
 		profile = aac_profile - 1;
