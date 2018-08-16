@@ -428,6 +428,7 @@ int rtmp_mpegts_write_frame(RTMPPacket *pkt, int* cc, Tag_Video_AvcC* avc, Audio
 	            continue;
 	        }
 
+			//nalu type  1byte
 			if(slen < 1)
 				return 0;
 			memcpy(&src_nal_type, src, 1);
@@ -584,7 +585,12 @@ int rtmp_mpegts_write_frame(RTMPPacket *pkt, int* cc, Tag_Video_AvcC* avc, Audio
                 *p++ = 7;    /* size */
                 *p++ = 0x50; /* random access + PCR */
 
-                p = mpegts_write_pcr_bits(p, dts - 63000);
+                /*
+                            在 TS 的传输过程中，一般 DTS 和 PCR 差值会在一个合适的范围，这个差值就是要设置的视音频 Buffer 的大小. 
+                            1) 视频 DTS 和 PCR 的差值在 700ms -- 1200ms 之间.
+                            2) 音频 DTS 和 PCR 的差值在 200ms -- 700ms 之间。
+                        */
+                p = mpegts_write_pcr_bits(p, dts - 63000); /* 700 ms PCR delay */
             }
 
             /* PES header */
@@ -646,8 +652,7 @@ int rtmp_mpegts_write_frame(RTMPPacket *pkt, int* cc, Tag_Video_AvcC* avc, Audio
                 /* no adaptation */
 
                 packet[3] |= 0x20;
-                p = ngx_movemem(&packet[4] + stuff_size, &packet[4],
-                                p - &packet[4]);
+                p = ngx_movemem(&packet[4] + stuff_size, &packet[4], p - &packet[4]);
 
                 packet[4] = (char) (stuff_size - 1);
                 if (stuff_size >= 2) {
@@ -3189,6 +3194,25 @@ int
 	return RTMP_SendPacket(r, &packet, FALSE);
 }
 
+
+int RTMP_Send_Set_ChunkSize(RTMP *r){
+    RTMPPacket packet;
+	char pbuf[256], *pend = pbuf + sizeof(pbuf);
+
+	packet.m_nChannel = 0x02;	/* control channel (invoke) */
+	packet.m_headerType = RTMP_PACKET_SIZE_LARGE;
+	packet.m_packetType = RTMP_PACKET_TYPE_CHUNK_SIZE;
+	packet.m_nTimeStamp = 0;
+	packet.m_nInfoField2 = 0;
+	packet.m_hasAbsTimestamp = 0;
+	packet.m_body = pbuf + RTMP_MAX_HEADER_SIZE;
+
+	packet.m_nBodySize = 4;
+
+	AMF_EncodeInt32(packet.m_body, pend, r->m_outChunkSize);
+	return RTMP_SendPacket(r, &packet, FALSE);
+}
+
 static int
 	SendBytesReceived(RTMP *r)
 {
@@ -3476,7 +3500,7 @@ int
 	packet.m_nBodySize = nSize;
 
 	buf = packet.m_body;
-	buf = AMF_EncodeInt16(buf, pend, nType);
+	buf = AMF_EncodeInt16(buf, pend, nType);	//AMF3 type
 
 	if (nType == 0x1B)
 	{
@@ -3493,7 +3517,7 @@ int
 	else
 	{
 		if (nSize > 2)
-			buf = AMF_EncodeInt32(buf, pend, nObject);
+			buf = AMF_EncodeInt32(buf, pend, nObject);	//AMF3 value
 
 		if (nSize > 6)
 			buf = AMF_EncodeInt32(buf, pend, nTime);
@@ -4492,6 +4516,7 @@ static void
 	unsigned int tmp;
 	if (packet->m_body && packet->m_nBodySize >= 2)
 		nType = AMF_DecodeInt16(packet->m_body);
+	
 	RTMP_Log(RTMP_LOGDEBUG, "%s, received ctrl. type: %d, len: %d", __FUNCTION__, nType,
 		packet->m_nBodySize);
 	/*RTMP_LogHex(packet.m_body, packet.m_nBodySize); */
@@ -4669,6 +4694,45 @@ static int
 	return 4;
 }
 
+/*
+    MpegTS PCR
+
+    一、 标准规定在原始音频和视频流中,PTS的间隔不能超过0.7s，出现在TS包头的PCR间隔不能超过0.1s，PCR最大值为26:30:43
+    二、 在TS的传输过程中，一般 DTS 和 PCR 差值会在一个合适的范围，这个差值就是要设置的视音频 Buffer 的大小
+        1) 视频 DTS 和 PCR 的差值在 700ms -- 1200ms 之间
+        2) 音频 DTS 和 PCR 的差值在 200ms -- 700ms 之间
+
+    三、 PCR分两部分编码：一个以系统时钟频率的 1/300 为单位，称为PCR_base，共33bit；另一个以系统时钟频率为单位，称为PCR_ext，共9bit，共42bit。
+        具体规定如下:
+        PCR_base(i) = ((系统时钟频率 x t(i)) div 300) % 2^33
+        PCR_ext(i) = ((系统时钟频率 x t(i)) div 1) % 300
+        PCR(i) = PCR_base(i) x 300 + PCR_ext(i)
+
+        例如:
+            时间"03:02:29.012"的PCR计算如下:
+            03:02:29.012 = ((3 * 60) + 2) * 60 + 29.012 = 10949.012s
+
+            PCR_base = ((27 000 000 * 10949.012) / 300) % 2^33 = 98 541 080
+            PCR_ext  = ((27 000 000 * 10949.012) / 1  ) % 300  = 0 
+            PCR = 98 541 080 * 300 + 0 = 295 623 324 000
+
+        逆推一个:
+
+            假设PCR= 1209740011800
+            PCRbase = 1209740011800 / 300 = 4032466706
+            PCR-ext = 1209740011800 % 300 = 0
+
+            t = PCRbase*300/27000000 = 44805.185622222222222222222222222
+            time:  t/3600: ( t-(t/3600))/60: t-( t-(t/3600))/60 = 12:26:45.185622222222222222222222222
+
+    四、 PCR-base的作用:
+        1) 与PTS和DTS作比较, 当二者相同时, 相应的单元被显示或者解码
+        2) 在解码器切换节目时,提供对解码器 PCR 计数器的初始值, 以让该 PCR 值与 PTS、DTS 最大可能地达到相同的时间起点
+
+    五、 PCR-ext的作用:
+        1) 通过解码器端的锁相环路修正解码器的系统时钟, 使其达到和编码器一致的 27MHz.
+*/
+
 //#if 0
 /*
 一、  Chunk Format（块格式）
@@ -4742,7 +4806,7 @@ static int
 		|-----------------------------------------------------------------------|=======================|
 		>       		message length(3byte)		| messagetypeid (1byte) |   message stream id	>
 		|===============================================|-----------------------|=======================|
-		>                           message stream id(4byte)				|
+		>                           message stream id(4byte)	(小端字节序)	|
 		|=======================================================================|
 
 		1、 timestamp（时间戳）：占用3个字节，因此它最多能表示到 16777215 = 0xFFFFFF = 2^24-1, 当它的值超过这个最大值时，这三个字节都置为1，
@@ -4750,6 +4814,7 @@ static int
 			接受端在判断 timestamp 字段 24个位 都为1时就会去 Extended timestamp 中解析实际的时间戳。
 
 			T = timestatmp == 0xFFFFFF ? timestamp : Extended_timestamp
+			单位 : 毫秒
 
 		2、 message length（消息数据的长度）：占用3个字节，表示实际发送的消息的数据如音频帧、视频帧等数据的长度，单位是字节。
 			注意这里是Message的长度，也就是chunk属于的Message的总数据长度，而不是chunk本身Data的数据的长度。
@@ -4759,16 +4824,17 @@ static int
 		3、 message type id(消息的类型id)：占用1个字节，表示实际发送的数据的类型
 
 			0x01 --- Chunk Size
-			0x03 --- Report
+			0x02 --- AbortMessage
+			0x03 --- Report(ACK)
 			0x04 --- Control
-			0x05 --- Server BandWidth
-			0x06 --- Client BandWidth
+			0x05 --- Server BandWidth(Windows ACK Size)
+			0x06 --- Client BandWidth(Set Peer Bandwith)
 			0x08 --- AudioData
 			0x09 --- VideoData
 			0x12 --- Indo Metadata
 			0x14 --- Invoke
 
-		4、 msg stream id（消息的流id）：占用4个字节，表示该 chunk 所在的 流的ID，和 Basic Header 的 CSID 一样，它采用小端存储的方式，
+		4、 msg stream id（消息的流id）：占用4个字节，表示该 chunk 所在的 流的ID，和 Basic Header 的 CSID 一样，它采用  [小端存储]  的方式
 
 	3、 Extended Timestamp（扩展时间戳）： 时间戳实际值，并非时间戳差值
 		上面我们提到在chunk中会有时间戳 timestamp 和时间戳差 timestamp delta，并且它们不会和 此字段 同时存在，
@@ -4968,10 +5034,11 @@ int RTMP_ReadPacket(RTMP *r, RTMPPacket *packet)
 	{
 		//RTMP_LogHexString(RTMP_LOGDEBUG2, (uint8_t *)packet->m_body, packet->m_nBodySize);
 
-		RTMP_Log(RTMP_LOGDEBUG, 
-        "fmt=%d,csid=%d,mtime=%lld,mlen=%d,mtype=%02x,msid=%d,prev_time=%lld\n",
+        RTMP_Log(RTMP_LOGDEBUG, 
+        "fmt=%d,csid=%d,time=%lld,mlen=%d,mtype=%02x,msid=%d,prev_time=%lld\n",
         packet->m_headerType,packet->m_nChannel,packet->m_nTimeStamp,packet->m_nBodySize,
-        packet->m_packetType,packet->m_nInfoField2, r->m_channelTimestamp[packet->m_nChannel]);
+        packet->m_packetType,packet->m_nInfoField2, 
+        r->m_channelTimestamp[packet->m_nChannel]);
 	
 		/* make packet's timestamp absolute */
 		if (!packet->m_hasAbsTimestamp)
@@ -5316,6 +5383,7 @@ int RTMP_SendPacket(RTMP *r, RTMPPacket *packet, int queue)
 	int nChunkSize;
 	int tlen;
 
+    
 
 	if (packet->m_nChannel >= r->m_channelsAllocatedOut)
 	{
@@ -5332,13 +5400,12 @@ int RTMP_SendPacket(RTMP *r, RTMPPacket *packet, int queue)
 		r->m_channelsAllocatedOut = n;
 	}
 
-
-	RTMP_Log(RTMP_LOGINFO, 
+    RTMP_Log(RTMP_LOGINFO, 
         "Send ==> fmt=%d,csid=%d,time=%lld,mlen=%d,mtype=%02x,msid=%d\n",
         packet->m_headerType,packet->m_nChannel,packet->m_nTimeStamp,packet->m_nBodySize,
         packet->m_packetType,packet->m_nInfoField2);
 
-	RTMP_LogHexString(RTMP_LOGINFO, (uint8_t *)packet->m_body, packet->m_nBodySize);
+    RTMP_LogHexString(RTMP_LOGINFO, (uint8_t *)packet->m_body, packet->m_nBodySize);
 
 	prevPacket = r->m_vecChannelsOut[packet->m_nChannel];
 	if (prevPacket && packet->m_headerType != RTMP_PACKET_SIZE_LARGE)
@@ -5851,17 +5918,20 @@ static int
 	HTTP_Post(RTMP *r, RTMPTCmd cmd, const char *buf, int len)
 {
 	char hbuf[512];
-	int hlen = snprintf(hbuf, sizeof(hbuf), "POST /%s%s/%d HTTP/1.1\r\n"
+	int hlen = snprintf(hbuf, sizeof(hbuf), 
+		"POST /%s%s/%d HTTP/1.1\r\n"
 		"Host: %.*s:%d\r\n"
 		"Accept: */*\r\n"
 		"User-Agent: Shockwave Flash\r\n"
 		"Connection: Keep-Alive\r\n"
 		"Cache-Control: no-cache\r\n"
 		"Content-type: application/x-fcs\r\n"
-		"Content-length: %d\r\n\r\n", RTMPT_cmds[cmd],
-		r->m_clientID.av_val ? r->m_clientID.av_val : "",
-		r->m_msgCounter, r->Link.hostname.av_len, r->Link.hostname.av_val,
-		r->Link.port, len);
+		"Content-length: %d\r\n\r\n", 
+		
+		RTMPT_cmds[cmd], r->m_clientID.av_val ? r->m_clientID.av_val : "", r->m_msgCounter, 
+		
+		r->Link.hostname.av_len, r->Link.hostname.av_val, r->Link.port, len);
+	
 	RTMPSockBuf_Send(&r->m_sb, hbuf, hlen);
 	hlen = RTMPSockBuf_Send(&r->m_sb, buf, len);
 	r->m_msgCounter++;
@@ -6269,8 +6339,10 @@ stopKeyframeSearch:
 			nTimeStamp = r->m_read.nResumeTS + packet.m_nTimeStamp;
 			prevTagSize = 11 + nPacketLen;
 
+            //FLV Tag type
 			*ptr = packet.m_packetType;
 			ptr++;
+            //datasize
 			ptr = AMF_EncodeInt24(ptr, pend, nPacketLen);
 
 #if 0
@@ -6291,8 +6363,9 @@ stopKeyframeSearch:
 				RTMP_Log(RTMP_LOGDEBUG, "VIDEO: nTimeStamp: 0x%08X (%d)\n", nTimeStamp, nTimeStamp);
 			}
 #endif
-
+            //timestamp
 			ptr = AMF_EncodeInt24(ptr, pend, nTimeStamp);
+            //extern_timestamp
 			*ptr = (char)((nTimeStamp & 0xFF000000) >> 24);
 			ptr++;
 
