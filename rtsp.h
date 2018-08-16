@@ -102,7 +102,7 @@
     
             Client                                                      Server
     ---------------------------------------------------------------------------------
-  1.OPTIONS rtsp://127.0.0.1:554/tt.sdp RTSP/1.0\r\n
+  1.OPTIONS rtsp://127.0.0.1/tt.sdp RTSP/1.0\r\n
     CSeq : 1\r\n
     User-Agent : Lavf57.71.100\r\n
     \r\n
@@ -114,7 +114,7 @@
                                                                 \r\n
     ---------------------------------------------------------------------------------
   2.DESCRIBE rtsp://127.0.0.1:554/tt.sdp RTSP/1.0\r\n
-    Accept : application/sdp
+    Accept : application/sdp\r\n
     CSeq : 2\r\n
     User-Agent : Lavf57.71.100\r\n
     \r\n
@@ -133,7 +133,7 @@
                                                                 \r\n
                                                                 Session Descriprion Protocol()
     ---------------------------------------------------------------------------------
-  3.SETUP rtsp://127.0.0.1:554/tt.sdp/streamid=0 RTSP/1.0\r\n
+  3.SETUP rtsp://127.0.0.1:554/tt.sdp/trackID=0 RTSP/1.0\r\n
     Transport : RTP/AVP/UDP;unicast;client_port=6364-6365
     x-Dynamic-Rate : 0\r\n
     CSeq : 3\r\n
@@ -147,12 +147,11 @@
                                                                 Session : 7735853132375681257
                                                                 Date : Thu, 16 Aug 2018 06:39:57 GMT\r\n
                                                                 Expires : Thu, 16 Aug 2018 06:39:57 GMT\r\n
-                                                                Transport : 
-                                                                RTP/AVP/UDP;unicast;mode=record;source=127.0.0.1;client_port=6364-6365;server-port=6970-6971
+                                                                Transport : RTP/AVP/UDP;unicast;mode=record;source=127.0.0.1;client_port=6364-6365;server-port=6970-6971
                                                                 x-Dynamic-Rate : 0\r\n
                                                                 \r\n
     ---------------------------------------------------------------------------------
-  4.SETUP rtsp://127.0.0.1:554/tt.sdp/streamid=1 RTSP/1.0\r\n
+  4.SETUP rtsp://127.0.0.1:554/tt.sdp/trackID=1 RTSP/1.0\r\n
     Transport : RTP/AVP/UDP;unicast;client_port=6366-6367
     x-Dynamic-Rate : 0\r\n
     CSeq : 4\r\n
@@ -167,12 +166,11 @@
                                                                 Session : 7735853132375681257
                                                                 Date : Thu, 16 Aug 2018 06:39:57 GMT\r\n
                                                                 Expires : Thu, 16 Aug 2018 06:39:57 GMT\r\n
-                                                                Transport : 
-                                                                RTP/AVP/UDP;unicast;mode=record;source=127.0.0.1;client_port=6366-6367;server-port=6970-6971
+                                                                Transport : RTP/AVP/UDP;unicast;mode=record;source=127.0.0.1;client_port=6366-6367;server-port=6970-6971
                                                                 x-Dynamic-Rate : 0\r\n
                                                                 \r\n
     ---------------------------------------------------------------------------------
-  5.PLAY rtsp://127.0.0.1:554/tt.sdp RTSP/1.0\r\n
+  5.PLAY rtsp://127.0.0.1:554/tt.sdp/ RTSP/1.0\r\n
     Range : npt=0.000-\r\n
     CSeq : 5\r\n
     User-Agent : Lavf57.71.100\r\n
@@ -189,7 +187,7 @@
     ---------------------------------------------------------------------------------
     <<=== Data exchange by rtp/rtcp ===>>
     ---------------------------------------------------------------------------------
-  6.TEARDOWN rtsp://127.0.0.1:554/tt.sdp RTSP/1.0\r\n
+  6.TEARDOWN rtsp://127.0.0.1:554/tt.sdp/ RTSP/1.0\r\n
     CSeq : 6\r\n
     User-Agent : Lavf57.71.100\r\n
     Session : 7735853132375681257
