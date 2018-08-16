@@ -1511,6 +1511,22 @@ residual_block_cabac( coeffLevel, maxNumCoeff ) {
     }
 }
 
+/*
+	h264_mp4toannexb   -----------------  aac_adtstoasc
+	
+	h264有两种封装:
+		1) 一种是annexb模式，传统模式，有startcode，SPS和PPS是在ES中
+		2) 一种是mp4模式，一般mp4 mkv会有，没有startcode，SPS和PPS以及其它信息被封装在container中，每一个frame前面是这个frame的长度
+
+	在ffmpeg中用h264_mp4toannexb_filter可以做转换:
+		1) 注册filter, avcbsfc = av_bitstream_filter_init("h264_mp4toannexb");
+		2) 转换bitstream
+			av_bitstream_filter_filter(AVBitStreamFilterContext *bsfc,
+                               AVCodecContext *avctx, const char *args,
+                     uint8_t **poutbuf, int *poutbuf_size, const uint8_t *buf, int buf_size, int keyframe)
+*/
+
+
 // RTO（Retransmission TimeOut）重传超时时间
 // RTT（Round Trip Time）往返时间
 // RTT 由三部分组成：链路的传播时间（propagation delay）、末端系统的处理时间、路由器缓存中的排队和处理时间（queuing delay）。
