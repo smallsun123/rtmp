@@ -2,8 +2,32 @@
 #define __FLV__H__
 
 
-Data_Length(){
-    DataOffset,     //(4byte) length of data prev
+//////////////////////////////////
+
+/*
+    ------------------------
+    Flv_File_Header     --- 46 4c 56 01 05 00 00 00 09
+    ------------------------
+    PreviousTagSize     --- 00 00 00 00
+    ------------------------
+    Flv_Tag_Header
+    ------------------------
+    PreviousTagSize
+    ------------------------
+    Flv_Tag_Header
+    ------------------------
+    PreviousTagSize
+    ------------------------
+    ...
+
+    
+*/
+
+//////////////////////////////////
+
+
+PreviousTagSize(){
+    back-pointers,  //(4byte) Size of previous tag
 }
 
 Flv_File_Header(){  // always 9 byte
@@ -24,7 +48,7 @@ Flv_File_Header(){  // always 9 byte
         TypeFlagsVideo,         // (1bit), 1 = Video tags are present
     }
 
-    Data_Length()
+    DataOffset,     // (4byte) 00 00 00 09
 }
 
 Audio_Tag_Header(){
@@ -140,8 +164,6 @@ Video_Tag_Header(){
             */
         CompositionTime,    // (3byte), 
     }
-
-    VideoData;
 }
 
 Flv_Tag_Header(){
@@ -163,8 +185,6 @@ Flv_Tag_Header(){
 
     Audio_Tag_Header(),
     Video_Tag_Header(),
-    
-    Data_Length()
 }
 
 #endif
